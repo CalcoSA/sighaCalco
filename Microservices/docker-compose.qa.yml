@@ -1,0 +1,37 @@
+name: sighacalco-qa
+
+services:
+  authentication:
+    container_name: sighacalco_qa_authentication
+    build:
+      context: ./sighaCalco.Authentication
+      dockerfile: Dockerfile
+    env_file:
+      - ./sighaCalco.Authentication/.env.qa
+    ports:
+      - "8101:8000"
+    restart: unless-stopped
+
+  loans:
+    container_name: sighacalco_qa_loans
+    build:
+      context: ./sighaCalco.Loans
+      dockerfile: Dockerfile
+    env_file:
+      - ./sighaCalco.Loans/.env.qa
+    ports:
+      - "8102:8000"
+    restart: unless-stopped
+
+  integration:
+    container_name: sighacalco_qa_integration
+    build:
+      context: ./sighaCalco.Integration
+      dockerfile: Dockerfile
+    env_file:
+      - ./sighaCalco.Integration/.env.qa
+    ports:
+      - "8103:8000"
+    volumes:
+      - ./sighaCalco.Integration/generated:/app/generated
+    restart: unless-stopped
