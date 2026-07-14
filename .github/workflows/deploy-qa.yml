@@ -25,8 +25,6 @@ jobs:
           echo "${{ secrets.QA_AUTH_ENV }}" > Microservices/sighaCalco.Authentication/.env.qa
           echo "${{ secrets.QA_LOANS_ENV }}" > Microservices/sighaCalco.Loans/.env.qa
           echo "${{ secrets.QA_INTEGRATION_ENV }}" > Microservices/sighaCalco.Integration/.env.qa
-
-          echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" >> Microservices/sighaCalco.Integration/.env.qa
           echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" > Microservices/.env.onlyoffice
 
       - name: Upload project to VM
