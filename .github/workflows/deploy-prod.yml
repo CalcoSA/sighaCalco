@@ -31,7 +31,7 @@ jobs:
 
       - name: Upload project to VM
         run: |
-          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} "mkdir -p ${{ secrets.PROD_DEPLOY_PATH }}"
+          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} "sudo mkdir -p '${{ secrets.QA_DEPLOY_PATH }}' && sudo chown -R '${{ secrets.GCP_VM_USER }}':'${{ secrets.GCP_VM_USER }}' /opt/apps/sighacalco"
 
           rsync -az --delete \
             --exclude ".git" \
@@ -43,7 +43,7 @@ jobs:
             --exclude "Microservices/onlyoffice/logs/*" \
             --exclude "Microservices/onlyoffice/lib/*" \
             -e "ssh -p ${{ secrets.GCP_VM_PORT }}" \
-            ./ ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/
+            ./ ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }}:${{ secrets.QA_DEPLOY_PATH }}/
 
       - name: Deploy Production containers
         run: |
