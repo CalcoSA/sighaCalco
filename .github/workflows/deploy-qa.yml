@@ -25,13 +25,11 @@ jobs:
           echo "${{ secrets.QA_AUTH_ENV }}" > Microservices/sighaCalco.Authentication/.env.qa
           echo "${{ secrets.QA_LOANS_ENV }}" > Microservices/sighaCalco.Loans/.env.qa
           echo "${{ secrets.QA_INTEGRATION_ENV }}" > Microservices/sighaCalco.Integration/.env.qa
-
-          echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" >> Microservices/sighaCalco.Integration/.env.qa
           echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" > Microservices/.env.onlyoffice
 
       - name: Upload project to VM
         run: |
-          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} "sudo mkdir -p '${{ secrets.QA_DEPLOY_PATH }}' && sudo chown -R '${{ secrets.GCP_VM_USER }}':'${{ secrets.GCP_VM_USER }}' /opt/apps/sighacalco"
+          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} "mkdir -p ${{ secrets.QA_DEPLOY_PATH }}"
 
           rsync -az --delete \
             --exclude ".git" \
