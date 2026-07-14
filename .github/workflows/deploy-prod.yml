@@ -52,20 +52,20 @@ jobs:
 
             cd ${{ secrets.PROD_DEPLOY_PATH }}/Microservices
 
-            if ! command -v docker >/dev/null 2>&1; then
-              curl -fsSL https://get.docker.com | sh
-              sudo usermod -aG docker $USER
+            mkdir -p sighaCalco.Integration/generated
+            chmod -R 777 sighaCalco.Integration/generated || true
+
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE="docker-compose"
+            else
+              echo "Docker Compose no está disponible en la VM."
+              exit 1
             fi
 
-            mkdir -p onlyoffice/logs onlyoffice/data onlyoffice/lib
-            mkdir -p sighaCalco.Integration/generated
-
-            sudo chown -R 1000:1000 sighaCalco.Integration/generated || true
-            sudo chown -R 1000:1000 onlyoffice || true
-
-            docker compose --env-file .env.onlyoffice -f docker-compose.onlyoffice.yml up -d
-            docker compose -f docker-compose.prod.yml down
-            docker compose -f docker-compose.prod.yml up -d --build
+            $COMPOSE -f docker-compose.prod.yml down
+            $COMPOSE -f docker-compose.prod.yml up -d --build
 
             docker image prune -f
           EOF
