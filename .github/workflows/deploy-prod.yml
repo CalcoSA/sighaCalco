@@ -1,0 +1,71 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.GCP_VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Prepare env files
+        run: |
+          echo "${{ secrets.PROD_AUTH_ENV }}" > Microservices/sighaCalco.Authentication/.env.prod
+          echo "${{ secrets.PROD_LOANS_ENV }}" > Microservices/sighaCalco.Loans/.env.prod
+          echo "${{ secrets.PROD_INTEGRATION_ENV }}" > Microservices/sighaCalco.Integration/.env.prod
+
+          echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" >> Microservices/sighaCalco.Integration/.env.prod
+          echo "ONLYOFFICE_JWT_SECRET=${{ secrets.ONLYOFFICE_JWT_SECRET }}" > Microservices/.env.onlyoffice
+
+      - name: Upload project to VM
+        run: |
+          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} "mkdir -p ${{ secrets.PROD_DEPLOY_PATH }}"
+
+          rsync -az --delete \
+            --exclude ".git" \
+            --exclude ".github" \
+            --exclude "**/.venv" \
+            --exclude "**/__pycache__" \
+            --exclude "**/generated/*" \
+            --exclude "Microservices/onlyoffice/data/*" \
+            --exclude "Microservices/onlyoffice/logs/*" \
+            --exclude "Microservices/onlyoffice/lib/*" \
+            -e "ssh -p ${{ secrets.GCP_VM_PORT }}" \
+            ./ ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/
+
+      - name: Deploy Production containers
+        run: |
+          ssh -p ${{ secrets.GCP_VM_PORT }} ${{ secrets.GCP_VM_USER }}@${{ secrets.GCP_VM_HOST }} << 'EOF'
+            set -e
+
+            cd ${{ secrets.PROD_DEPLOY_PATH }}/Microservices
+
+            if ! command -v docker >/dev/null 2>&1; then
+              curl -fsSL https://get.docker.com | sh
+              sudo usermod -aG docker $USER
+            fi
+
+            mkdir -p onlyoffice/logs onlyoffice/data onlyoffice/lib
+            mkdir -p sighaCalco.Integration/generated
+
+            sudo chown -R 1000:1000 sighaCalco.Integration/generated || true
+            sudo chown -R 1000:1000 onlyoffice || true
+
+            docker compose --env-file .env.onlyoffice -f docker-compose.onlyoffice.yml up -d
+            docker compose -f docker-compose.prod.yml down
+            docker compose -f docker-compose.prod.yml up -d --build
+
+            docker image prune -f
+          EOF
