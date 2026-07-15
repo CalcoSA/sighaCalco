@@ -22,12 +22,12 @@ class ExcelReader:
         self.fieldMappings = self._buildFieldMappings()
 
     def generateTemplate(self, fileName: str, content: bytes, dateFrom: date, dateTo: date,) -> GeneratedFileDto:
-        sourceWorkbook = load_workbook(BytesIO(content), data_only=True)
+        sourceWorkbook = load_workbook(BytesIO(content), data_only=True, keep_links=False)
         sourceWorksheet = sourceWorkbook.active
         headerRowNumber, sourceColumnMap = self._findSourceColumns(sourceWorksheet)
         sourceRows = self._getSourceRowsByDateRange(worksheet=sourceWorksheet, headerRowNumber=headerRowNumber, columnMap=sourceColumnMap, dateFrom=dateFrom, dateTo=dateTo,)
         templatePath = self._getTemplatePath()
-        templateWorkbook = load_workbook(templatePath)
+        templateWorkbook = load_workbook(templatePath, keep_links=False)
         templateWorksheet = templateWorkbook["INGRESO DE PERSONAL"]
         campoRow, templateFieldMap = self._findTemplateFieldColumns(worksheet=templateWorksheet, valueToFind="CAMPO",)
 
