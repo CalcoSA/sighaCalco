@@ -2,7 +2,8 @@ from app.infrastructure.storage.GeneratedFileStorage import GeneratedFileStorage
 from app.application.interfaces.IFileApplication import IFileApplication
 from app.domain.dtos.OnlyOfficeDto import OnlyOfficeConfigDto
 from app.infrastructure.excel.ExcelReader import ExcelReader
-from datetime import date
+from datetime import date, datetime, timedelta
+from pathlib import Path
 import jwt
 import os
 
@@ -25,6 +26,8 @@ class FileApplication(IFileApplication):
 
         if dateFrom > dateTo:
             raise ValueError("La fecha desde no puede ser mayor a la fecha hasta.")
+        
+        self._cleanupOldGeneratedExcels()
 
         generatedFile = self.excelReader.generateTemplate(fileName=fileName, content=content, dateFrom=dateFrom, dateTo=dateTo,)
 
@@ -68,3 +71,23 @@ class FileApplication(IFileApplication):
         config["token"] = token
 
         return OnlyOfficeConfigDto(documentServerUrl=onlyofficePublicUrl, config=config,)
+    
+    def _cleanupOldGeneratedExcels(self) -> None:
+        retentionDays = 7
+
+        generatedFolder = Path(__file__).resolve().parents[3] / "generated" / "sinergy"
+
+        if not generatedFolder.exists():
+            return
+
+        limitDate = datetime.now() - timedelta(days=retentionDays)
+
+        for filePath in generatedFolder.glob("*.xlsx"):
+            try:
+                fileModifiedDate = datetime.fromtimestamp(filePath.stat().st_mtime)
+
+                if fileModifiedDate <= limitDate:
+                    filePath.unlink()
+
+            except Exception as exception:
+                print(f"[WARN] No se pudo eliminar el archivo generado {filePath}: {exception}")
