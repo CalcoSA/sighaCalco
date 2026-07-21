@@ -140,11 +140,11 @@ class ExcelReader:
             #    sourceColumns=["centro de costo"],
             #    transform=lambda row: self._getCellText(row["centro de costo"]),
             #),
-            #FieldMapping(
-            #    targetField="centro_costos_3",
-            #    sourceColumns=["centro de operacion"],
-            #    transform=lambda row: f'{self._getCellText(row["centro de operacion"])}-002',
-            #),
+            FieldMapping(
+                targetField="centro_costos_3",
+                sourceColumns=["trabajo - nombre sub-area asignada(o)"],
+                transform=lambda row: self._mapCostCenter3(self._getCellText(row["trabajo - nombre sub-area asignada(o)"])),
+            ),
             FieldMapping(
                 targetField="centro_costos_4",
                 sourceColumns=[],
@@ -908,6 +908,92 @@ class ExcelReader:
             return "72"
 
         return ""
+    
+    def _mapCostCenter3(self, value: str) -> str:
+        subArea = self._normalize(value)
+
+        if not subArea:
+            return ""
+
+        subArea = subArea.replace(".", " ")
+        subArea = " ".join(subArea.split())
+
+        restaurantCodes = {
+            "museo de arte moderno": "R19",
+            "amsterdam": "R25",
+            "arkadia": "R21",
+            "campestre": "R03",
+            "cocina domicilios": "C01",
+            "cocina occidente": "C02",
+            "florida etapa 2": "R24",
+            "florida parque comercial": "R15",
+            "h florida parque comercial": "H05",
+            "h molinos": "H04",
+            "h santafe": "H02",
+            "h tesoro": "H01",
+            "h unicentro": "H06",
+            "heladeria oviedo": "H08",
+            "heladeria viva envigado": "H07",
+            "laureles": "R07",
+            "lemont": "R22",
+            "llanogrande": "R10",
+            "mayorca": "R09",
+            "mayorca etapa dos": "R09",
+            "molinos": "R08",
+            "one plaza": "R18",
+            "oviedo": "R06",
+            "palma grande": "R16",
+            "plaza fabricato": "R23",
+            "poblado": "R01",
+            "premium plaza": "R11",
+            "puerta del norte": "R14",
+            "san diego": "R05",
+            "san nicolas": "R13",
+            "santafe": "R12",
+            "tesoro": "R04",
+            "unicentro": "R02",
+            "viva envigado": "R20",
+        }
+
+        administrativeAreas = {
+            "diversidad funcional",
+            "tesoreria",
+            "vinculos y relaciones humanas",
+            "calidad",
+            "gerencia general",
+            "sena",
+            "seguridad y salud en el trabajo",
+            "direccion operativa",
+            "servicios administrativos",
+            "comunicarte",
+            "tecnologia",
+            "direccion de calidad",
+            "compras",
+            "control y mejora continua",
+            "costos",
+            "direccion de alimentos",
+            "contabilidad",
+            "gestion ambiental",
+            "nomina",
+            "bienestar y cultura organizacional",
+            "seleccion y contratacion",
+            "direccion de logistica",
+            "servicios generales",
+            "analitica de datos",
+            "gestion de activos fijos",
+            "direccion administrativa",
+            "direccion desarrollo humano",
+        }
+
+        code = restaurantCodes.get(subArea)
+
+        if not code and subArea in administrativeAreas:
+            code = "ADM"
+
+        if not code:
+            return ""
+
+        return f"{code}-002"
     
     def _mapBankCorporation(self, value: str) -> str:
         originalValue = " ".join(str(value or "").strip().split())
