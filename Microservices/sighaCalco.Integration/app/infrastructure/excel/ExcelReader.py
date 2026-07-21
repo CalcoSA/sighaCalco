@@ -16,7 +16,11 @@ class FieldMapping:
 
 class ExcelReader:
 
-    INCOME_DATE_COLUMN = "fecha de ingreso contrato"
+    INCOME_DATE_COLUMN = ["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]
+    COMPANY_RUT_COLUMN = "Empresa - RUT Empresa"
+    COMPANY_RUT_VALUE = "800.180.330-9"
+    SALARY = "campos personalizados de trabajo - salario (obligatorio)"
+    REST = "campos personalizados de trabajo - dia de descanso 2 (t)"
 
     def __init__(self):
         self.fieldMappings = self._buildFieldMappings()
@@ -45,96 +49,110 @@ class ExcelReader:
         return [
             FieldMapping(
                 targetField="campo",
-                sourceColumns=["apellidos y nombres"],
-                transform=lambda row: self._getCellText(row["apellidos y nombres"]),
+                sourceColumns=[["apellidos y nombres", "colaborador - nombre completo"]],
+                transform=lambda row: self._getCellText(row.get("apellidos y nombres") or row.get("colaborador - nombre completo")),
             ),
             FieldMapping(
                 targetField="empleado",
-                sourceColumns=["cedula numero"],
-                transform=lambda row: self._getCellText(row["cedula numero"]),
+                sourceColumns=[["cedula numero", "colaborador - número de documento"]],
+                transform=lambda row: self._getCellText(row.get("cedula numero") or row.get("colaborador - número de documento")),
             ),
             FieldMapping(
                 targetField="pnombre",
-                sourceColumns=["apellidos y nombres"],
-                transform=lambda row: self._splitFullName(self._getCellText(row["apellidos y nombres"]))["pnombre"],
+                sourceColumns=[["apellidos y nombres", "colaborador - nombre completo"]],
+                transform=lambda row: self._splitFullName(self._getCellText(row.get("apellidos y nombres") or row.get("colaborador - nombre completo")))["pnombre"],
             ),
             FieldMapping(
                 targetField="snombre",
-                sourceColumns=["apellidos y nombres"],
-                transform=lambda row: self._splitFullName(self._getCellText(row["apellidos y nombres"]))["snombre"],
+                sourceColumns=[["apellidos y nombres", "colaborador - nombre completo"]],
+                transform=lambda row: self._splitFullName(self._getCellText(row.get("apellidos y nombres") or row.get("colaborador - nombre completo")))["snombre"],
             ),
             FieldMapping(
                 targetField="papellido",
-                sourceColumns=["apellidos y nombres"],
-                transform=lambda row: self._splitFullName(self._getCellText(row["apellidos y nombres"]))["papellido"],
+                sourceColumns=[["apellidos y nombres", "colaborador - nombre completo"]],
+                transform=lambda row: self._splitFullName(self._getCellText(row.get("apellidos y nombres") or row.get("colaborador - nombre completo")))["papellido"],
             ),
             FieldMapping(
                 targetField="spellido",
-                sourceColumns=["apellidos y nombres"],
-                transform=lambda row: self._splitFullName(self._getCellText(row["apellidos y nombres"]))["spellido"],
+                sourceColumns=[["apellidos y nombres", "colaborador - nombre completo"]],
+                transform=lambda row: self._splitFullName(self._getCellText(row.get("apellidos y nombres") or row.get("colaborador - nombre completo")))["spellido"],
             ),
             FieldMapping(
                 targetField="fecha_nacimiento",
-                sourceColumns=["fecha de nacimiento"],
-                transform=lambda row: self._formatDateAsText(row["fecha de nacimiento"].value),
+                sourceColumns=[["fecha de nacimiento", "colaborador - fecha de nacimiento"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de nacimiento") or row.get("colaborador - fecha de nacimiento")),
             ),
             FieldMapping(
                 targetField="tipo_doc_id",
-                sourceColumns=["tipo de identificacion"],
-                transform=lambda row: self._mapDocumentTypeByCode(self._getCellText(row["tipo de identificacion"])),
+                sourceColumns=[["tipo de identificacion", "colaborador - tipo de documento"]],
+                transform=lambda row: self._mapDocumentTypeByCode(self._getCellText(row.get("tipo de identificacion") or row.get("colaborador - tipo de documento"))),
             ),
             FieldMapping(
                 targetField="num_doc_id",
-                sourceColumns=["cedula numero"],
-                transform=lambda row: self._getCellText(row["cedula numero"]),
+                sourceColumns=[["cedula numero", "colaborador - número de documento"]],
+                transform=lambda row: self._getCellText(row.get("cedula numero") or row.get("colaborador - número de documento")),
             ),
             FieldMapping(
                 targetField="ciudad_doc_id",
-                sourceColumns=["expedida en"],
-                transform=lambda row: self._getCellText(row["expedida en"]),
+                sourceColumns=[["expedida en", "campos personalizados de colaborador - lugar de expedición- nmn"]],
+                transform=lambda row: self._getCellText(row.get("expedida en") or row.get("campos personalizados de colaborador - lugar de expedición- nmn")),
             ),
             FieldMapping(
                 targetField="sexo",
-                sourceColumns=["sexo"],
-                transform=lambda row: self._getCellText(row["sexo"]),
+                sourceColumns=[["sexo", "colaborador - sexo"]],
+                transform=lambda row: self._getCellText(row.get("sexo") or row.get("colaborador - sexo")),
             ),
             FieldMapping(
                 targetField="fecha_ingreso",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
-            # 12
+            FieldMapping(
+                targetField="salario",
+                sourceColumns=[],
+                transform=lambda row: (self._getCellText(row["campos personalizados de trabajo - salario (obligatorio)"])
+                    if "campos personalizados de trabajo - salario (obligatorio)" in row
+                    else ""
+                ),
+            ),
             FieldMapping(
                 targetField="fecha_sueldo",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="tipo_sueldo",
-                sourceColumns=["tipo de cargo"],
-                transform=lambda row: self._mapSalaryType(self._getCellText(row["tipo de cargo"])),
+                sourceColumns=[["tipo de cargo", "campos personalizados de cargo - cargo general"]],
+                transform=lambda row: self._mapSalaryType(self._getCellText(row.get("tipo de cargo") or row.get("campos personalizados de cargo - cargo general"))),
             ),
             FieldMapping(
                 targetField="sucursal",
                 sourceColumns=[],
                 transform=lambda row: "002",
             ),
+            #FieldMapping(
+            #    targetField="centro_costos_1",
+            #    sourceColumns=["centro de costo"],
+            #    transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
+            #),
+            #FieldMapping(
+            #    targetField="centro_costos_2",
+            #    sourceColumns=["centro de costo"],
+            #    transform=lambda row: self._getCellText(row["centro de costo"]),
+            #),
+            #FieldMapping(
+            #    targetField="centro_costos_3",
+            #    sourceColumns=["centro de operacion"],
+            #    transform=lambda row: f'{self._getCellText(row["centro de operacion"])}-002',
+            #),
             FieldMapping(
-                targetField="centro_costos_1",
-                sourceColumns=["centro de costo"],
-                transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
+                targetField="centro_costos_4",
+                sourceColumns=[],
+                transform=lambda row: (self._getCellText(row["campos personalizados de trabajo - dia de descanso 2 (t)"])
+                    if "campos personalizados de trabajo - dia de descanso 2 (t)" in row
+                    else ""
+                ),
             ),
-            FieldMapping(
-                targetField="centro_costos_2",
-                sourceColumns=["centro de costo"],
-                transform=lambda row: self._getCellText(row["centro de costo"]),
-            ),
-            FieldMapping(
-                targetField="centro_costos_3",
-                sourceColumns=["centro de operacion"],
-                transform=lambda row: f'{self._getCellText(row["centro de operacion"])}-002',
-            ),
-            # 19
             FieldMapping(
                 targetField="tipo_empleado",
                 sourceColumns=[],
@@ -142,16 +160,22 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="tipo_contrato",
-                sourceColumns=["tipo de cargo", "centro de trabajo"],
-                transform=lambda row: self._mapContractType(
-                    self._getCellText(row["tipo de cargo"]),
-                    self._getCellText(row["centro de trabajo"]),
+                sourceColumns=[["trabajo - cargo", "tipo de cargo"]],
+                transform=lambda row: (
+                    self._mapContractType(
+                        self._getCellText(row["tipo de cargo"]),
+                        self._getCellText(row["centro de trabajo"]),
+                    )
+                    if "centro de trabajo" in row and self._getCellText(row["centro de trabajo"])
+                    else self._mapContractType2(
+                        self._getCellText(row["trabajo - cargo"])
+                    )
                 ),
             ),
             FieldMapping(
                 targetField="fecha_terminacion",
-                sourceColumns=["fecha contrato hasta"],
-                transform=lambda row: self._formatDateAsText(row["fecha contrato hasta"].value),
+                sourceColumns=[["fecha contrato hasta", "trabajo - fecha vencimiento contrato"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha contrato hasta") or row.get("trabajo - fecha vencimiento contrato")),
             ),
             FieldMapping(
                 targetField="regimen",
@@ -160,26 +184,26 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="cargo",
-                sourceColumns=["tipo de cargo"],
+                sourceColumns=[["tipo de cargo", "trabajo - cargo"]],
                 transform=lambda row: self._mapTypeCharge(self._getCellText(row["tipo de cargo"])),
             ),
             FieldMapping(
                 targetField="fondo_cesantias",
-                sourceColumns=["fondo de cesantias"],
+                sourceColumns=[["fondo de cesantias", "plan - fondo de cesantía"]],
                 transform=lambda row: self._mapSeveranceFund(self._getCellText(row["fondo de cesantias"])),
             ),
             FieldMapping(
                 targetField="fecha_cesantia",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="entidad_pension",
-                sourceColumns=["a.f.p."],
-                transform=lambda row: self._mapPensionFund(
-                    self._getCellText(row["a.f.p."]),
-                    self._getCellText(row["tipo de cargo"]),
-                    self._getCellText(row["centro de trabajo"]),
+                sourceColumns=["plan - fondo de pensiones"],
+                transform=lambda row: (
+                    "P000"
+                    if self._normalize(self._getCellText(row["plan - fondo de pensiones"])) in {"", "no aplica"}
+                    else self._getCellText(row["plan - fondo de pensiones"])
                 ),
             ),
             FieldMapping(
@@ -189,12 +213,12 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="fecha_pension",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="entidad_salud",
-                sourceColumns=["e.p.s."],
+                sourceColumns=[["e.p.s.", "plan - eps"]],
                 transform=lambda row: self._mapEPS(self._getCellText(row["e.p.s."])),
             ),
             FieldMapping(
@@ -214,23 +238,23 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="fecha_caja_compensacion",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="corporacion",
-                sourceColumns=["codigo del banco"],
-                transform=lambda row: self._mapBankCorporation(self._getCellText(row["codigo del banco"])),
+                sourceColumns=[["codigo del banco", "colaborador - banco"]],
+                transform=lambda row: self._mapBankCorporation(self._getCellText(row.get("codigo del banco") or row.get("colaborador - banco"))),
             ),
             FieldMapping(
                 targetField="cuenta",
-                sourceColumns=["numero de cuenta"],
-                transform=lambda row: self._getCellText(row["numero de cuenta"]),
+                sourceColumns=[["numero de cuenta", "colaborador - número de cuenta"]],
+                transform=lambda row: self._getCellText(row.get("numero de cuenta") or row.get("colaborador - número de cuenta")),
             ),
             FieldMapping(
                 targetField="tipo_cuenta",
-                sourceColumns=["tipo de cuenta"],
-                transform=lambda row: self._getCellText(row["tipo de cuenta"]),
+                sourceColumns=[["tipo de cuenta", "colaborador - tipo de cuenta"]],
+                transform=lambda row: self._getCellText(row.get("tipo de cuenta") or row.get("colaborador - tipo de cuenta")),
             ),
             FieldMapping(
                 targetField="sucursal_bancaria",
@@ -239,7 +263,7 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="tipo_pago",
-                sourceColumns=["forma de pago"],
+                sourceColumns=[["forma de pago", "colaborador - forma de pago"]],
                 transform=lambda row: self._mapPaymentType(self._getCellText(row["forma de pago"])),
             ),
             FieldMapping(
@@ -262,11 +286,11 @@ class ExcelReader:
                 sourceColumns=[],
                 transform=lambda row: "A",
             ),
-            FieldMapping(
-                targetField="cuenta_gasto",
-                sourceColumns=["centro de costo"],
-                transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
-            ),
+            #FieldMapping(
+            #    targetField="cuenta_gasto",
+            #    sourceColumns=["centro de costo"],
+            #    transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
+            #),
             FieldMapping(
                 targetField="entidad_riesgo",
                 sourceColumns=[],
@@ -279,14 +303,18 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="fecha_riesgo",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
-            # 52
+            FieldMapping(
+                targetField="centro_trabajo",
+                sourceColumns=[["trabajo - cargo"]],
+                transform=lambda row: self._mapNewDecreeCodeByCharge(self._getCellText(row["trabajo - cargo"])),
+            ),
             FieldMapping(
                 targetField="fecha_centro_trabajo",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="ncontrato",
@@ -295,28 +323,28 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="email",
-                sourceColumns=["correo electronico"],
-                transform=lambda row: self._getCellText(row["correo electronico"]),
+                sourceColumns=[["correo electronico", "colaborador - email"]],
+                transform=lambda row: self._getCellText(row.get("correo electronico") or row.get("colaborador - email")),
             ),
             FieldMapping(
                 targetField="direccion",
-                sourceColumns=["direccion"],
-                transform=lambda row: self._getCellText(row["direccion"]),
+                sourceColumns=[["direccion", "colaborador - dirección"]],
+                transform=lambda row: self._getCellText(row.get("direccion") or row.get("colaborador - dirección")),
             ),
             FieldMapping(
                 targetField="telefono",
-                sourceColumns=["fax"],
-                transform=lambda row: self._getCellText(row["fax"]),
+                sourceColumns=[["fax", "colaborador - teléfono particular"]],
+                transform=lambda row: self._getCellText(row.get("fax") or row.get("colaborador - teléfono particular")),
             ),
             FieldMapping(
                 targetField="estado_civil",
-                sourceColumns=["estado civil"],
-                transform=lambda row: self._mapMaritalStatus(self._getCellText(row["estado civil"])),
+                sourceColumns=["colaborador - estado civil"],
+                transform=lambda row: self._mapMaritalStatus(self._getCellText(row["colaborador - estado civil"])),
             ),
             FieldMapping(
                 targetField="fecha_cencos",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="tipo_acumulado",
@@ -325,23 +353,23 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="barrio",
-                sourceColumns=["barrio"],
-                transform=lambda row: self._getCellText(row["barrio"]),
+                sourceColumns=[["barrio", "campos personalizados de colaborador - barrio"]],
+                transform=lambda row: self._getCellText(row.get("barrio") or row.get("campos personalizados de colaborador - barrio")),
             ),
             FieldMapping(
                 targetField="pais nacimiento",
-                sourceColumns=["ciudad de nacimiento"],
-                transform=lambda row: self._mapBirthCountryName(self._getCellText(row["ciudad de nacimiento"])),
+                sourceColumns=["colaborador - nacionalidad"],
+                transform=lambda row: self._getCellText(row["colaborador - nacionalidad"]),
             ),
             FieldMapping(
                 targetField="departamento nacimiento",
-                sourceColumns=["ciudad de nacimiento"],
-                transform=lambda row: self._mapBirthDepartmentName(self._getCellText(row["ciudad de nacimiento"])),
-            ),
+                sourceColumns=["campos personalizados de colaborador - lugar de nacimiento"],
+                transform=lambda row: self._mapBirthDepartment(self._getCellText(row["campos personalizados de colaborador - lugar de nacimiento"])),
+            ),            
             FieldMapping(
                 targetField="lugar_nacimiento",
-                sourceColumns=["ciudad de nacimiento"],
-                transform=lambda row: self._mapBirthCity(self._getCellText(row["ciudad de nacimiento"])),
+                sourceColumns=["campos personalizados de colaborador - lugar de nacimiento"],
+                transform=lambda row: self._getCellText(row["campos personalizados de colaborador - lugar de nacimiento"]),
             ),
             FieldMapping(
                 targetField="tipo_sangre",
@@ -370,26 +398,24 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="nivel_estudios",
-                sourceColumns=["nivel academico"],
-                transform=lambda row: self._mapAcademicLevel(self._getCellText(row["nivel academico"])),
+                sourceColumns=["campos personalizados de colaborador - nivel academico"],
+                transform=lambda row: self._mapAcademicLevel(self._getCellText(row["campos personalizados de colaborador - nivel academico"])),
             ),
             FieldMapping(
                 targetField="empresa",
                 sourceColumns=[],
                 transform=lambda row: "000000000000002",
             ),
+
             FieldMapping(
                 targetField="posicion",
-                sourceColumns=["tipo de cargo"],
-                transform=lambda row: self._mapTypeCharge(self._getCellText(row["tipo de cargo"])),
+                sourceColumns=["campos personalizados de cargo - cargo general"],
+                transform=lambda row: self._getCellText(row["campos personalizados de cargo - cargo general"]),
             ),
             FieldMapping(
                 targetField="tipo_cotizante",
-                sourceColumns=["tipo de cargo", "centro de trabajo"],
-                transform=lambda row: self._mapContributor(
-                    self._getCellText(row["tipo de cargo"]),
-                    self._getCellText(row["centro de trabajo"]),
-                ),
+                sourceColumns=["trabajo - cargo"],
+                transform=lambda row: self._mapContributor(self._getCellText(row["trabajo - cargo"])),
             ),
             FieldMapping(
                 targetField="subtipo_cotizante",
@@ -401,11 +427,26 @@ class ExcelReader:
                 sourceColumns=[],
                 transform=lambda row: "01",
             ),
-            # 94
+
+
+
+
+            FieldMapping(
+                targetField="trabaja_sabado",
+                sourceColumns=[["trabajo - cargo", "tipo de cargo"]],
+                transform=lambda row: self._mapSaturdayWorkByCharge(self._getCellText(row["trabajo - cargo"])),
+            ),
+
+
+
+
+
+
+
             FieldMapping(
                 targetField="fecha_cambio_sabado",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="escalafon",
@@ -414,8 +455,8 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="fecha_escalafon",
-                sourceColumns=["fecha de ingreso contrato"],
-                transform=lambda row: self._formatDateAsText(row["fecha de ingreso contrato"].value),
+                sourceColumns=[["fecha de ingreso contrato", "trabajo - fecha ingreso compañía"]],
+                transform=lambda row: self._formatDateAsText(row.get("fecha de ingreso contrato") or row.get("trabajo - fecha ingreso compañía")),
             ),
             FieldMapping(
                 targetField="auxilio_pension",
@@ -439,27 +480,29 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="tipo_sueldo_empleado",
-                sourceColumns=["tipo de cargo", "centro de trabajo"],
-                transform=lambda row: self._mapEmployeeSalaryType(
-                    self._getCellText(row["tipo de cargo"]),
-                    self._getCellText(row["centro de trabajo"]),
-                ),
+                sourceColumns=["trabajo - cargo"],
+                transform=lambda row: self._mapEmployeeSalaryType(self._getCellText(row["trabajo - cargo"])),
             ),
             FieldMapping(
                 targetField="depto_residencia",
-                sourceColumns=["ciudad"],
-                transform=lambda row: self._mapBirthDepartmentName(self._getCellText(row["ciudad"])),
+                sourceColumns=["colaborador - departamento"],
+                transform=lambda row: self._getCellText(row["colaborador - departamento"]),
             ),
             FieldMapping(
                 targetField="municipio_resid",
-                sourceColumns=["Ciudad"],
-                transform=lambda row: self._mapBirthCity(self._getCellText(row["ciudad"])),
+                sourceColumns=["colaborador - municipio"],
+                transform=lambda row: self._getCellText(row["colaborador - municipio"]),
             ),
             # 109
         ]
 
     def _findSourceColumns(self, worksheet):
         requiredColumns = self._getRequiredSourceColumns()
+        optionalColumns = [
+            self.COMPANY_RUT_COLUMN,
+            self.SALARY,
+            self.REST
+        ]
 
         for row in worksheet.iter_rows(min_row=1, max_row=10):
             currentColumns = {}
@@ -467,28 +510,70 @@ class ExcelReader:
             for cell in row:
                 normalizedValue = self._normalize(cell.value)
 
-                if normalizedValue in requiredColumns:
-                    currentColumns[normalizedValue] = cell.column
+                if not normalizedValue:
+                    continue
 
-            if all(columnName in currentColumns for columnName in requiredColumns):
+                for requiredColumn in requiredColumns:
+
+                    if isinstance(requiredColumn, list):
+                        normalizedOptions = [
+                            self._normalize(option)
+                            for option in requiredColumn
+                        ]
+
+                        canonicalColumn = normalizedOptions[0]
+
+                        if normalizedValue in normalizedOptions:
+                            currentColumns[canonicalColumn] = cell.column
+
+                    else:
+                        normalizedRequiredColumn = self._normalize(requiredColumn)
+
+                        if normalizedValue == normalizedRequiredColumn:
+                            currentColumns[normalizedRequiredColumn] = cell.column
+
+                for optionalColumn in optionalColumns:
+                    normalizedOptionalColumn = self._normalize(optionalColumn)
+
+                    if normalizedValue == normalizedOptionalColumn:
+                        currentColumns[normalizedOptionalColumn] = cell.column
+
+            if all(
+                (
+                    self._normalize(columnName[0]) in currentColumns
+                    if isinstance(columnName, list)
+                    else self._normalize(columnName) in currentColumns
+                )
+                for columnName in requiredColumns
+            ):
                 return row[0].row, currentColumns
 
-        missingColumnsText = ", ".join(sorted(requiredColumns))
+        missingColumns = []
+
+        for requiredColumn in requiredColumns:
+            if isinstance(requiredColumn, list):
+                missingColumns.append(" o ".join(requiredColumn))
+            else:
+                missingColumns.append(requiredColumn)
+
+        missingColumnsText = ", ".join(missingColumns)
 
         raise ValueError(f"No se encontraron las columnas requeridas en el archivo origen: {missingColumnsText}.")
 
-    def _getRequiredSourceColumns(self) -> set[str]:
-        requiredColumns = {self.INCOME_DATE_COLUMN}
+    def _getRequiredSourceColumns(self):
+        requiredColumns = [self.INCOME_DATE_COLUMN]
 
         for mapping in self.fieldMappings:
             for sourceColumn in mapping.sourceColumns:
-                requiredColumns.add(self._normalize(sourceColumn))
+                requiredColumns.append(sourceColumn)
 
         return requiredColumns
 
     def _getSourceRowsByDateRange(self, worksheet, headerRowNumber: int, columnMap: dict, dateFrom: date, dateTo: date,) -> list[dict[str, Any]]:
         sourceRows = []
-        incomeDateColumn = columnMap[self.INCOME_DATE_COLUMN]
+        incomeDateColumn = columnMap[self._normalize(self.INCOME_DATE_COLUMN[0])]
+        companyRutColumn = columnMap.get(self._normalize(self.COMPANY_RUT_COLUMN))
+        expectedCompanyRut = self._cleanRut(self.COMPANY_RUT_VALUE)
 
         for rowNumber in range(headerRowNumber + 1, worksheet.max_row + 1):
             incomeDateValue = worksheet.cell(row=rowNumber, column=incomeDateColumn).value
@@ -499,6 +584,13 @@ class ExcelReader:
 
             if incomeDate < dateFrom or incomeDate > dateTo:
                 continue
+
+            if companyRutColumn:
+                companyRutValue = worksheet.cell(row=rowNumber, column=companyRutColumn).value
+                currentCompanyRut = self._cleanRut(companyRutValue)
+
+                if currentCompanyRut != expectedCompanyRut:
+                    continue
 
             sourceRows.append(self._buildSourceRowContext(worksheet=worksheet, rowNumber=rowNumber, columnMap=columnMap,))
 
@@ -742,7 +834,13 @@ class ExcelReader:
 
         return text
     
+    def _cleanRut(self, value) -> str:
+        return "".join(character for character in str(value or "") if character.isdigit())
+    
     def _formatDateAsText(self, value) -> str:
+        if hasattr(value, "value"):
+            value = value.value
+
         parsedDate = self._parseDate(value)
 
         if not parsedDate:
@@ -812,6 +910,18 @@ class ExcelReader:
         return ""
     
     def _mapBankCorporation(self, value: str) -> str:
+        originalValue = " ".join(str(value or "").strip().split())
+
+        if not originalValue:
+            return ""
+
+        normalizedText = self._normalize(originalValue)
+
+        if normalizedText in {"no aplica", "n/a", "na", "no"}:
+            return ""
+
+        bankCode = self._normalizeCode(originalValue, 2)
+
         bankCode = str(value or "").strip()
 
         if not bankCode:
@@ -828,82 +938,99 @@ class ExcelReader:
         if bankCode == "51":
             return "DAVIVIENDA"
 
-        return ""
+        return originalValue.upper()
     
     def _mapPaymentType(self, value: str) -> str:
-        paymentType = str(value or "").strip()
+        paymentType = " ".join(str(value or "").strip().split())
 
         if not paymentType:
             return ""
 
-        if paymentType == "2":
+        normalizedPaymentType = self._normalize(paymentType)
+        paymentTypeCode = self._normalizeCode(paymentType, 1)
+
+        if normalizedPaymentType in {"no generar pago", "no aplica", "n/a", "na"}:
+            return ""
+
+        if paymentTypeCode == "2":
             return "CO"
 
-        if paymentType == "1":
+        if paymentTypeCode == "1":
             return "CH"
         
-        if paymentType == "0":
+        if paymentTypeCode == "0":
             return "EF"
+
+        if "cheque" in normalizedPaymentType:
+            return "CH"
+
+        if "transferencia bancaria" in normalizedPaymentType:
+            return "CO"
+
+        if "transferencia" in normalizedPaymentType:
+            return "CO"
 
         return ""
 
     def _mapMaritalStatus(self, value: str) -> str:
-        maritalStatus = str(value or "").strip()
+        maritalStatus = self._normalize(value)
 
         if not maritalStatus:
             return "000"
 
-        if maritalStatus == "1": # Soltero
+        if maritalStatus == "soltero":
             return "001"
 
-        if maritalStatus == "2": # Casado
+        if maritalStatus == "casado":
             return "002"
-        
-        if maritalStatus == "3": # Viudo
-            return "004"
 
-        if maritalStatus == "4": # Divorsiado
-            return "005"
-        
-        if maritalStatus == "5": # Unión Libre Estado Civil
+        if maritalStatus == "union libre":
             return "003"
 
-        return ""
+        if maritalStatus == "viudo":
+            return "004"
+
+        if maritalStatus == "divorciado":
+            return "005"
+
+        if maritalStatus == "separado":
+            return "005"
+
+        return "000"
     
     def _mapAcademicLevel(self, value: str) -> str:
-        academicLevel = str(value or "").strip()
+        academicLevel = self._normalize(value)
 
         if not academicLevel:
             return "000"
 
-        if academicLevel == "01":
+        if academicLevel == "primaria":
             return "001"
 
-        if academicLevel == "02":
+        if academicLevel in {"bachiller", "bachiller - 002"}:
             return "002"
-        
-        if academicLevel == "03":
-            return "003"
-        
-        if academicLevel == "04":
-            return "004"
-        
-        if academicLevel == "05":
-            return "005"
-        
-        if academicLevel == "08":
-            return "006"
-        
-        if academicLevel == "07":
-            return "007"
 
-        return ""
+        if academicLevel in {"tecnico", "tecnico - 003"}:
+            return "003"
+
+        if academicLevel in {"tecnologo", "tecnologo - 004"}:
+            return "004"
+
+        if academicLevel in {"universitario", "universitario - 005", "profesional"}:
+            return "005"
+
+        if academicLevel in {"especialista", "especializacion"}:
+            return "006"
+
+        return "000"
     
     def _mapTypeCharge(self, value: str) -> str:
-        typeCharge = str(value or "").strip()
+        originalValue = " ".join(str(value or "").strip().split())
 
-        if not typeCharge:
+        if not originalValue:
             return ""
+
+        typeCharge = self._normalizeCode(originalValue, 4)
 
         if typeCharge == "0010":
             return "ADMINISTRADORA FIN DE SEMANA"
@@ -1853,10 +1980,20 @@ class ExcelReader:
         if typeCharge == "2078":
             return "TOSTADORA"
 
-        return ""
+        return originalValue.upper()
     
     def _mapSeveranceFund(self, value: str) -> str:
-        severanceFund = str(value or "").strip()
+        originalValue = " ".join(str(value or "").strip().split())
+
+        if not originalValue:
+            return "000"
+
+        normalizedText = self._normalize(originalValue)
+
+        if normalizedText in {"no aplica", "n/a", "na", "no"}:
+            return "000"
+
+        severanceFund = self._normalizeCode(originalValue, 2)
 
         if not severanceFund:
             return "000"
@@ -1888,7 +2025,7 @@ class ExcelReader:
         if severanceFund == "99":
             return "VARIOS"
 
-        return ""
+        return originalValue.upper()
     
     def _mapPensionFund(self, value: str, typeChargeValue: str, workCenterValue: str) -> str:
         pensionFund = str(value or "").strip()
@@ -1934,7 +2071,17 @@ class ExcelReader:
         return ""
     
     def _mapEPS(self, value: str) -> str:
-        eps = str(value or "").strip()
+        originalValue = " ".join(str(value or "").strip().split())
+
+        if not originalValue:
+            return "000"
+
+        normalizedText = self._normalize(originalValue)
+
+        if normalizedText in {"no aplica", "n/a", "na", "no"}:
+            return "000"
+
+        eps = self._normalizeCode(originalValue, 2)
 
         if not eps:
             return "S000"
@@ -2032,7 +2179,7 @@ class ExcelReader:
         if eps == "99":
             return "VARIOS"
 
-        return ""
+        return originalValue.upper()
     
     def _mapSalaryType(self, value: str) -> str:
         salaryType = str(value or "").strip()
@@ -2040,33 +2187,47 @@ class ExcelReader:
         if not salaryType:
             return "000"
 
-        if salaryType == "0060":
+        normalizedSalaryType = self._normalize(salaryType)
+        normalizedCode = self._normalizeCode(salaryType, 4)
+
+        if normalizedCode == "0060":
             return "003"
-        else:
-            return "001"
 
-    def _mapEmployeeSalaryType(self, typeChargeValue: str, workCenterValue: str) -> str:
-        typeCharge = self._normalizeCode(typeChargeValue, 4)
-        workCenter = self._normalizeCode(workCenterValue, 2)
+        if "aprendiz" in normalizedSalaryType:
+            return "003"
 
-        if typeCharge == "0060" and workCenter.startswith("03"):
+        return "001"
+
+    def _mapEmployeeSalaryType(self, value: str) -> str:
+        contributor = self._normalize(value)
+
+        if not contributor:
+            return "F"
+
+        if "aprendiz" in contributor and "lectiva" in contributor:
             return "V"
 
         return "F"
 
-    def _mapContributor(self, typeChargeValue: str, workCenterValue: str) -> str:
-        typeCharge = self._normalizeCode(typeChargeValue, 4)
-        workCenter = self._normalizeCode(workCenterValue, 2)
+    def _mapContributor(self, value: str) -> str:
+        contributor = self._normalize(value)
 
-        if typeCharge == "0060" and workCenter.startswith("03"):
+        if not contributor:
+            return "1"
+
+        if "aprendiz" in contributor and "lectiva" in contributor:
             return "12"
 
-        if typeCharge == "0060" and workCenter.startswith("01"):
+        if "aprendiz" in contributor and "productiva" in contributor:
             return "19"
 
         return "1"
 
     def _mapContractType(self, typeChargeValue: str, workCenterValue: str) -> str:
+        
+        print(f"[DEBUG] tipoCargo={typeChargeValue}")
+        print(f"[DEBUG] centroTrabajo={workCenterValue}")
+
         typeCharge = self._normalizeCode(typeChargeValue, 4)
         workCenter = self._normalizeCode(workCenterValue, 2)
 
@@ -2074,6 +2235,20 @@ class ExcelReader:
             return "4"
 
         if typeCharge == "0060" and workCenter.startswith("01"):
+            return "5"
+
+        return "2"
+    
+    def _mapContractType2(self, typeChargeValue: str) -> str:
+        typeCharge = self._normalize(typeChargeValue)
+
+        if not typeCharge:
+            return "2"
+
+        if "aprendiz" in typeCharge and "lectiva" in typeCharge:
+            return "4"
+
+        if "aprendiz" in typeCharge and "productiva" in typeCharge:
             return "5"
 
         return "2"
@@ -2626,6 +2801,441 @@ class ExcelReader:
         }
 
         return departments.get(departmentCode, "000")
+    
+    def _mapBirthDepartment(self, value: str) -> str:
+        place = self._normalize(value)
+
+        if not place:
+            return ""
+
+        place = (
+            place.replace(".", " ")
+            .replace(",", " ")
+            .replace("-", " ")
+            .replace("/", " ")
+        )
+
+        place = " ".join(place.split())
+
+        if not place:
+            return ""
+
+        foreignPlaces = [
+            "venezuela",
+            "caracas",
+            "maracaibo",
+            "merida",
+            "tachira",
+            "zulia",
+            "aragua",
+            "guarico",
+            "lara",
+            "ecuador",
+            "suiza",
+        ]
+
+        if any(foreignPlace in place for foreignPlace in foreignPlaces):
+            return ""
+
+        departmentKeywords = {
+            "valle del cauca": "VALLE DEL CAUCA",
+            "norte de santander": "NORTE DE SANTANDER",
+            "cundinamarca": "CUNDINAMARCA",
+            "antioquia": "ANTIOQUIA",
+            "atlantico": "ATLANTICO",
+            "bolivar": "BOLIVAR",
+            "boyaca": "BOYACA",
+            "caldas": "CALDAS",
+            "caqueta": "CAQUETA",
+            "cauca": "CAUCA",
+            "cesar": "CESAR",
+            "choco": "CHOCO",
+            "cordoba": "CORDOBA",
+            "guajira": "LA GUAJIRA",
+            "huila": "HUILA",
+            "magdalena": "MAGDALENA",
+            "meta": "META",
+            "narino": "NARIÑO",
+            "putumayo": "PUTUMAYO",
+            "quindio": "QUINDIO",
+            "risaralda": "RISARALDA",
+            "santander": "SANTANDER",
+            "sucre": "SUCRE",
+            "tolima": "TOLIMA",
+        }
+
+        for keyword, department in departmentKeywords.items():
+            if keyword in place:
+                return department
+
+        placesByDepartment = {
+            "BOGOTA D.C.": [
+                "bogota", "bogota dc", "bogota d c", "suba", "bosa", "kennedy",
+                "usme", "engativa", "fontibon", "tunjuelito", "chapinero",
+                "puente aranda", "ciudad bolivar", "rafael uribe", "antonio narino",
+                "usaquen", "san cristobal sur",
+            ],
+            "ANTIOQUIA": [
+                "medellin", "bello", "itagui", "envigado", "rionegro", "apartado",
+                "turbo", "carepa", "chigorodo", "dabeiba", "vigia del fuerte",
+                "ituango", "el bagre", "taraza", "caucasia", "yarumal", "urrao",
+                "frontino", "sonson", "san roque", "arboletes", "necocli", "mutata",
+                "canasgordas", "salgar", "concordia", "santa barbara", "jardin",
+                "jerico", "tamesis", "marinilla", "la ceja", "retiro", "girardota",
+                "copacabana", "barbosa", "amaga", "andes", "abejorral", "uramita",
+                "puerto berrio", "liborina", "valdivia", "vegachi", "san francisco",
+                "cocorna", "amalfi", "segovia", "titiribi", "betulia", "campamento",
+                "yolombo", "san rafael", "alejandria", "peque", "san jeronimo",
+                "san carlos", "caldas",
+            ],
+            "CHOCO": [
+                "quibdo", "tado", "istmina", "condoto", "unguia", "riosucio",
+                "bojaya", "alto baudo", "bajo baudo", "novita", "nuqui", "bagado",
+                "bahia solano", "acandi", "lloro", "rio quito", "pizarro",
+            ],
+            "CORDOBA": [
+                "monteria", "lorica", "ayapel", "montelibano", "tierralta",
+                "sahagun", "chinu", "san pelayo", "planeta rica", "cerete",
+                "puerto escondido", "canalete", "buenavista", "monitos",
+                "pueblo nuevo", "valencia", "san bernardo del viento",
+            ],
+            "BOLIVAR": [
+                "cartagena", "cartagena de indias", "magangue", "mompox", "mompos",
+                "san jacinto", "san martin de loba", "achi", "maria la baja",
+                "arjona", "turbaco", "san fernando", "mahates", "santa catalina",
+                "san estanislao", "simiti", "arenal", "zambrano",
+            ],
+            "ATLANTICO": [
+                "barranquilla", "soledad", "malambo", "luruaco", "baranoa",
+                "puerto colombia", "santo tomas", "sabanalarga", "suan",
+            ],
+            "CESAR": [
+                "valledupar", "bosconia", "agustin codazzi", "curumani",
+                "chimichagua", "la paz", "astrea",
+            ],
+            "MAGDALENA": [
+                "santa marta", "cienaga", "fundacion", "plato", "ariguani",
+                "pivijay", "guamal", "zona bananera", "el banco", "santa ana",
+                "pueblo viejo", "nueva granada",
+            ],
+            "SUCRE": [
+                "sincelejo", "corozal", "san marcos", "san onofre", "morroa",
+                "ovejas", "majagual", "san benito abad", "since", "guaranda",
+                "caimito", "los palmitos", "tolu", "tolu viejo",
+            ],
+            "LA GUAJIRA": [
+                "riohacha", "maicao", "uribia", "fonseca",
+            ],
+            "SANTANDER": [
+                "bucaramanga", "barrancabermeja", "socorro", "charala",
+                "barbosa santander", "rionegro santander", "malaga", "ocamonte",
+                "floridablanca", "piedecuesta", "sabana de torres", "mogotes",
+                "puente nacional", "landazuri", "cimitarra",
+            ],
+            "NORTE DE SANTANDER": [
+                "cucuta", "chinacota", "pamplona", "villa del rosario", "tibu",
+            ],
+            "BOYACA": [
+                "tunja", "duitama", "sogamoso", "paipa", "moniquira",
+                "chiquinquira", "ramiriqui", "turmeque", "guateque", "sotaquira",
+                "mongui", "chitaraque", "saboya", "iza", "gameza", "tibana",
+                "muzo", "toca", "otanche", "quipama",
+            ],
+            "CUNDINAMARCA": [
+                "soacha", "facatativa", "fusagasuga", "girardot", "chia",
+                "zipaquira", "guasca", "cachipay", "choachi", "lenguazaque",
+                "arbelaez", "la mesa", "viota", "sopo", "pasca", "junin",
+                "yacopi", "ubala", "gacheta", "madrid", "choconta", "fuquene",
+                "paime", "la pena",
+            ],
+            "VALLE DEL CAUCA": [
+                "cali", "palmira", "buenaventura", "yumbo", "zarzal", "tulua",
+                "buga", "cartago", "florida", "jamundi", "ansermanuevo",
+                "cerrito", "trujillo", "obando",
+            ],
+            "CAUCA": [
+                "popayan", "el tambo", "patia", "el bordo", "santander de quilichao",
+                "guapi", "timbiqui", "rosas", "miranda", "balboa", "paez",
+                "inza", "caloto", "mercaderes", "la sierra",
+            ],
+            "NARIÑO": [
+                "tumaco", "pasto", "ipiales", "barbacoas", "barbacoa",
+                "magui", "el charco", "olaya herrera", "satinga",
+            ],
+            "RISARALDA": [
+                "pereira", "dosquebradas", "santa rosa de cabal", "marsella",
+                "quinchia", "belen de umbria", "guatica",
+            ],
+            "CALDAS": [
+                "manizales", "viterbo", "filadelfia", "supia", "palestina",
+                "aranzazu", "chinchina", "samana", "la dorada", "aguadas",
+                "anserma",
+            ],
+            "TOLIMA": [
+                "ibague", "melgar", "fresno", "planadas", "chaparral", "mariquita",
+                "coyaima", "icononzo", "ortega", "purificacion", "honda",
+                "alpujarra", "libano", "espinal", "flandes",
+            ],
+            "HUILA": [
+                "neiva", "garzon", "pitalito", "la plata", "algeciras",
+                "campoalegre", "la argentina", "tarqui",
+            ],
+            "META": [
+                "villavicencio", "puerto lopez", "vista hermosa", "vistahermosa",
+                "acacias", "granada", "san juan de arama", "lejanias",
+                "mapiripan", "el castillo",
+            ],
+            "CAQUETA": [
+                "florencia", "san jose del fragua", "san vicente del caguan",
+                "cartagena del chaira",
+            ],
+            "PUTUMAYO": [
+                "mocoa", "orito",
+            ],
+            "ARAUCA": [
+                "arauca", "tame",
+            ],
+            "CASANARE": [
+                "yopal", "tauramena", "villanueva casanare",
+            ],
+            "QUINDIO": [
+                "armenia", "montenegro", "calarca",
+            ],
+            "GUAVIARE": [
+                "san jose del guaviare",
+            ],
+            "AMAZONAS": [
+                "puerto narino",
+            ],
+        }
+
+        paddedPlace = f" {place} "
+
+        for department, places in placesByDepartment.items():
+            for knownPlace in places:
+                if f" {knownPlace} " in paddedPlace:
+                    return department
+
+        return ""
+    
+    def _mapNewDecreeCodeByCharge(self, value: str) -> str:
+        originalValue = " ".join(str(value or "").strip().split())
+
+        if not originalValue:
+            return ""
+
+        charge = self._normalize(originalValue)
+        chargeCode = self._normalizeCode(originalValue, 4)
+
+        if chargeCode.isdigit():
+            mappedCharge = self._mapTypeCharge(originalValue)
+            charge = self._normalize(mappedCharge)
+
+        if not charge:
+            return ""
+        
+        if "teletrabajo" in charge:
+            return "1829902"
+
+        maintenanceKeywords = [
+            "mantenimiento",
+            "tecnico mantenimiento",
+            "tecnico locativo",
+            "refrigeracion",
+            "mecanico",
+            "obras",
+        ]
+
+        if any(keyword in charge for keyword in maintenanceKeywords):
+            return "3331201"
+
+        transportKeywords = [
+            "transporte",
+            "conductor",
+            "auxiliar conductor",
+            "mensajero",
+            "domiciliario",
+        ]
+
+        if any(keyword in charge for keyword in transportKeywords):
+            return "4492201"
+
+        logisticsKeywords = [
+            "logistica",
+            "logistico",
+            "almacen",
+            "bodega",
+            "inventario",
+            "inventarios",
+            "despacho",
+            "despachos",
+            "distribucion",
+            "abastecimiento",
+            "recibo",
+            "cava",
+        ]
+
+        if any(keyword in charge for keyword in logisticsKeywords):
+            return "2521001"
+
+        productionKeywords = [
+            "produccion",
+            "planta",
+            "cocina principal",
+            "heladeria principal",
+            "operario",
+            "alistamiento",
+            "empaque",
+            "empacador",
+            "enfriamiento",
+            "reposteria",
+            "quesos",
+            "ensambles",
+            "conos",
+            "tostadora",
+            "chef cocina principal",
+        ]
+
+        if any(keyword in charge for keyword in productionKeywords):
+            return "2108901"
+
+        administrativeKeywords = [
+            "aprendiz lectiva",
+            "aprendiz productiva",
+            "aprendiz",
+            "administrativo",
+            "administrativa",
+            "analista",
+            "coordinador",
+            "coordinadora",
+            "director",
+            "directora",
+            "gerente general",
+            "jefe",
+            "lider",
+            "tesoreria",
+            "contabilidad",
+            "nomina",
+            "compras",
+            "desarrollo humano",
+            "tecnologia",
+            "informatica",
+            "calidad",
+            "sst",
+            "seguridad y salud",
+            "facturacion",
+            "costos",
+            "bienestar",
+            "legal",
+            "financiero",
+            "financiera",
+            "impuestos",
+            "mercadeo",
+            "call center",
+            "centro de experiencia",
+        ]
+
+        if any(keyword in charge for keyword in administrativeKeywords):
+            return "1701001"
+
+        pointSaleKeywords = [
+            "punto de venta",
+            "restaurante",
+            "mesera",
+            "mesero",
+            "mesas",
+            "auxiliar mesas",
+            "camarero",
+            "office",
+            "cocinero",
+            "cocina",
+            "ayudante de cocina",
+            "plancha",
+            "plancha sal",
+            "bebidas",
+            "heladera",
+            "postres",
+            "pitas",
+            "ensaladas",
+            "crepera",
+            "cajera",
+            "cajero",
+            "cajera comedor",
+            "cajera helados",
+            "steward",
+            "platero",
+            "capitana",
+            "anfitrion",
+            "saloneras",
+            "aseo",
+            "servicios generales",
+        ]
+
+        if any(keyword in charge for keyword in pointSaleKeywords):
+            return "3561101"
+
+        return "3561101"
+    
+    def _mapSaturdayWorkByCharge(self, value: str) -> str:
+        originalValue = " ".join(str(value or "").strip().split())
+
+        if not originalValue:
+            return "S"
+
+        charge = self._normalize(originalValue)
+        chargeCode = self._normalizeCode(originalValue, 4)
+
+        # Si viene como código de cargo, lo convierte primero al nombre del cargo
+        if chargeCode.isdigit():
+            mappedCharge = self._mapTypeCharge(originalValue)
+            charge = self._normalize(mappedCharge)
+
+        if not charge:
+            return "S"
+
+        administrativeKeywords = [
+            "aprendiz lectiva",
+            "aprendiz productiva",
+            "aprendiz",
+            "administrativo",
+            "administrativa",
+            "analista",
+            "auxiliar administrativo",
+            "auxiliar administrativa",
+            "coordinador",
+            "coordinadora",
+            "director",
+            "directora",
+            "gerente",
+            "jefe",
+            "lider",
+            "tesoreria",
+            "contabilidad",
+            "contable",
+            "nomina",
+            "compras",
+            "desarrollo humano",
+            "tecnologia",
+            "informatica",
+            "calidad",
+            "sst",
+            "seguridad y salud",
+            "facturacion",
+            "costos",
+            "bienestar",
+            "legal",
+            "financiero",
+            "financiera",
+            "impuestos",
+            "mercadeo",
+            "call center",
+            "centro de experiencia",
+        ]
+
+        if any(keyword in charge for keyword in administrativeKeywords):
+            return "N"
+
+        return "S"
 
     def _cleanNumericCode(self, value: str) -> str:
         code = str(value or "").strip()
@@ -2658,17 +3268,45 @@ class ExcelReader:
 
         self._clearBankAccountChangesSheet(worksheet=worksheet, startRow=startRow)
 
-        for sourceRow in sourceRows:
-            birthCountry = self._mapBirthCountryName(self._getCellText(sourceRow["ciudad de nacimiento"]))
+        expectedCompanyRut = self._cleanRut(self.COMPANY_RUT_VALUE)
 
-            if birthCountry in {"", "000", "COLOMBIANO"}:
+        for sourceRow in sourceRows:
+            companyRut = self._cleanRut(self._getCellText(sourceRow.get(self._normalize(self.COMPANY_RUT_COLUMN))))
+
+            if companyRut != expectedCompanyRut:
                 continue
 
-            employeeDocument = self._getCellText(sourceRow["cedula numero"])
-            employeeName = self._getCellText(sourceRow["apellidos y nombres"])
-            bankName = self._mapBankCorporation(self._getCellText(sourceRow["codigo del banco"]))
-            accountNumber = self._getCellText(sourceRow["numero de cuenta"])
-            accountType = self._getCellText(sourceRow["tipo de cuenta"])
+            birthCountry = self._normalize(
+                self._getCellText(sourceRow.get(self._normalize("colaborador - nacionalidad")))
+            )
+
+            if birthCountry in {"", "colombiana", "colombiano", "colombia"}:
+                continue
+
+            employeeDocument = self._getCellText(
+                sourceRow.get(self._normalize("colaborador - número de documento"))
+                or sourceRow.get(self._normalize("cedula numero"))
+            )
+
+            employeeName = self._getCellText(
+                sourceRow.get(self._normalize("colaborador - nombre completo"))
+                or sourceRow.get(self._normalize("apellidos y nombres"))
+            )
+
+            bankName = self._getCellText(
+                sourceRow.get(self._normalize("colaborador - banco"))
+                or sourceRow.get(self._normalize("codigo del banco"))
+            )
+
+            accountNumber = self._getCellText(
+                sourceRow.get(self._normalize("colaborador - número de cuenta"))
+                or sourceRow.get(self._normalize("numero de cuenta"))
+            )
+
+            accountType = self._getCellText(
+                sourceRow.get(self._normalize("colaborador - tipo de cuenta"))
+                or sourceRow.get(self._normalize("tipo de cuenta"))
+            )
 
             worksheet.cell(row=currentRow, column=1, value=employeeDocument)
             worksheet.cell(row=currentRow, column=2, value=employeeDocument)
@@ -2684,5 +3322,7 @@ class ExcelReader:
 
     def _clearBankAccountChangesSheet(self, worksheet, startRow: int) -> None:
         for rowNumber in range(startRow, worksheet.max_row + 1):
-            for columnNumber in range(1, 7):
-                worksheet.cell(row=rowNumber, column=columnNumber, value=None)
+            for columnNumber in range(1, 9):  # A hasta H
+                cell = worksheet.cell(row=rowNumber, column=columnNumber)
+                cell.value = None
+                cell.number_format = "@"
