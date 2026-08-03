@@ -32,13 +32,12 @@ class ExcelReader:
         sourceRows = self._getSourceRowsByDateRange(worksheet=sourceWorksheet, headerRowNumber=headerRowNumber, columnMap=sourceColumnMap, dateFrom=dateFrom, dateTo=dateTo,)
         templatePath = self._getTemplatePath()
         templateWorkbook = load_workbook(templatePath, keep_links=False)
-        templateWorksheet = templateWorkbook["INGRESO DE PERSONAL"]
-        campoRow, templateFieldMap = self._findTemplateFieldColumns(worksheet=templateWorksheet, valueToFind="CAMPO",)
+        templateWorksheet = templateWorkbook["Ingresos"]
+        campoRow, templateFieldMap = self._findTemplateFieldColumns(worksheet=templateWorksheet, valueToFind="empleado",)
 
-        startRow = campoRow + 2
+        startRow = campoRow + 1
 
         self._writeTransformedRows(templateWorksheet=templateWorksheet, templateFieldMap=templateFieldMap, sourceRows=sourceRows, startRow=startRow,)
-        self._writeBankAccountChangesSheet(templateWorkbook=templateWorkbook, sourceRows=sourceRows,)
         output = BytesIO()
         templateWorkbook.save(output)
         output.seek(0)
@@ -47,11 +46,6 @@ class ExcelReader:
 
     def _buildFieldMappings(self) -> list[FieldMapping]:
         return [
-            FieldMapping(
-                targetField="campo",
-                sourceColumns=["colaborador - nombre completo"],
-                transform=lambda row: self._getCellText(row["colaborador - nombre completo"]),
-            ),
             FieldMapping(
                 targetField="empleado",
                 sourceColumns=["colaborador - numero de documento"],
@@ -127,27 +121,16 @@ class ExcelReader:
                 sourceColumns=[],
                 transform=lambda row: "002",
             ),
-            #FieldMapping(
-            #    targetField="centro_costos_1",
-            #    sourceColumns=["centro de costo"],
-            #    transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
-            #),
-            #FieldMapping(
-            #    targetField="centro_costos_2",
-            #    sourceColumns=["trabajo - cargo"],
-            #    transform=lambda row: self._mapCostCenter2(self._getCellText(row["trabajo - cargo"])),
-            #),
-            #FieldMapping(
-            #    targetField="centro_costos_2",
-            #    sourceColumns=[
-            #        "trabajo - cargo",
-            #        "trabajo - nombre sub-area asignada(o)",
-            #    ],
-            #    transform=lambda row: self._mapCostCenter2(
-            #        self._getCellText(row["trabajo - cargo"]),
-            #        self._getCellText(row["trabajo - nombre sub-area asignada(o)"]),
-            #    ),
-            #),
+            FieldMapping(
+                targetField="centro_costos_1",
+                sourceColumns=["trabajo - nombre sub-area asignada(o)"],
+                transform=lambda row: self._mapCostCenter1(self._mapCostCenter2(self._getCellText(row["trabajo - nombre sub-area asignada(o)"]))),
+            ),
+            FieldMapping(
+                targetField="centro_costos_2",
+                sourceColumns=["trabajo - nombre sub-area asignada(o)"],
+                transform=lambda row: self._mapCostCenter2(self._getCellText(row["trabajo - nombre sub-area asignada(o)"])),
+            ),
             FieldMapping(
                 targetField="centro_costos_3",
                 sourceColumns=["trabajo - nombre sub-area asignada(o)"],
@@ -292,11 +275,11 @@ class ExcelReader:
                 sourceColumns=[],
                 transform=lambda row: "A",
             ),
-            #FieldMapping(
-            #    targetField="cuenta_gasto",
-            #    sourceColumns=["centro de costo"],
-            #    transform=lambda row: self._mapCostCenter1(self._getCellText(row["centro de costo"])),
-            #),
+            FieldMapping(
+                targetField="cuenta_gasto",
+                sourceColumns=["trabajo - nombre sub-area asignada(o)"],
+                transform=lambda row: self._mapCostCenter1(self._mapCostCenter2(self._getCellText(row["trabajo - nombre sub-area asignada(o)"]))),
+            ),
             FieldMapping(
                 targetField="entidad_riesgo",
                 sourceColumns=[],
@@ -314,8 +297,8 @@ class ExcelReader:
             ),
             FieldMapping(
                 targetField="centro_trabajo",
-                sourceColumns=["trabajo - cargo"],
-                transform=lambda row: self._mapNewDecreeCodeByCharge(self._getCellText(row["trabajo - cargo"])),
+                sourceColumns=["trabajo - nombre sub-area asignada(o)"],
+                transform=lambda row: self._mapNewDecreeCodeByCharge(self._getCellText(row["trabajo - nombre sub-area asignada(o)"])),
             ),
             FieldMapping(
                 targetField="fecha_centro_trabajo",
@@ -363,7 +346,7 @@ class ExcelReader:
                 transform=lambda row: self._getCellText(row["campos personalizados de colaborador - barrio"]),
             ),
             FieldMapping(
-                targetField="pais nacimiento",
+                targetField="pais",
                 sourceColumns=["colaborador - nacionalidad"],
                 transform=lambda row: (
                     "160"
@@ -372,7 +355,7 @@ class ExcelReader:
                 ),
             ),
             FieldMapping(
-                targetField="departamento nacimiento",
+                targetField="departamento",
                 sourceColumns=["campos personalizados de colaborador - lugar de nacimiento"],
                 transform=lambda row: self._mapDepartment(self._getCellText(row["campos personalizados de colaborador - lugar de nacimiento"])),
             ),
@@ -888,8 +871,6 @@ class ExcelReader:
         if not costCenter:
             return ""
 
-        costCenter = costCenter.replace(".0", "")
-
         if costCenter.startswith("01"):
             return "51"
 
@@ -899,92 +880,93 @@ class ExcelReader:
         if costCenter.startswith("03") and costCenter.endswith("01"):
             return "73"
 
-        if costCenter.startswith("03") and not costCenter.endswith("02"):
+        if costCenter.startswith("03"):
             return "72"
 
         return ""
 
-    def _mapCostCenter2(self, chargeValue: str, subAreaValue: str = "") -> str:
-        charge = self._normalize(chargeValue)
-        subArea = self._normalize(subAreaValue)
+    def _mapCostCenter2(self, value: str) -> str:
+        subArea = self._normalize(value)
 
-        if subArea:
-            if "entrenamiento" in subArea:
-                return "02005009"
-
-            if "puntos de venta" in subArea:
-                return "02008003"
-
-            if "personal volante" in subArea:
-                return "02008004"
-
-            if "heladeria" in subArea or "heladerias" in subArea:
-                return "02008009"
-
-            if "domicilio" in subArea or "domicilios" in subArea:
-                return "02008010"
-
-            if "transporte" in subArea or "distribucion" in subArea:
-                return "02009002"
-
-            if "almacen no perecederos" in subArea:
-                return "02009003"
-
-            if "almacen perecederos" in subArea:
-                return "02009004"
-
-            if "cocina principal" in subArea:
-                return "03010003"
-
-            if "sena punto de venta" in subArea:
-                return "02005008"
-
-            if "sena produccion" in subArea:
-                return "03005008"
-
-        if not charge:
+        if not subArea:
             return ""
 
-        charge = charge.replace(".", " ")
-        charge = charge.replace("/", " ")
-        charge = charge.replace("-", " ")
-        charge = charge.replace("(", " ")
-        charge = charge.replace(")", " ")
-        charge = " ".join(charge.split())
+        subArea = subArea.replace(".", " ")
+        subArea = " ".join(subArea.split())
 
-        if any(keyword in charge for keyword in [
-            "aux mesas codigo entrenamiento",
-            "instructor",
-            "instructora",
-            "formadora",
-            "formacion",
-            "capacitacion",
-        ]):
-            return "02005009"
+        costCenters = {
+            "amsterdam": "02008003",
+            "arkadia": "02008003",
+            "campestre": "02008003",
+            "cocina domicilios": "02008003",
+            "cocina occidente": "02008003",
+            "florida etapa 2": "02008003",
+            "florida parque comercial": "02008003",
+            "laureles": "02008003",
+            "lemont": "02008003",
+            "llanogrande": "02008003",
+            "mayorca": "02008003",
+            "mayorca etapa dos": "02008003",
+            "molinos": "02008003",
+            "museo de arte moderno": "02008003",
+            "one plaza": "02008003",
+            "oviedo": "02008003",
+            "palma grande": "02008003",
+            "poblado": "02008003",
+            "plaza fabricato": "02008003",
+            "premium plaza": "02008003",
+            "puerta del norte": "02008003",
+            "punto de venta": "02008003",
+            "san diego": "02008003",
+            "san nicolas": "02008003",
+            "santafe": "02008003",
+            "tesoro": "02008003",
+            "unicentro": "02008003",
+            "viva envigado": "02008003",
 
-        if any(keyword in charge for keyword in [
-            "auxiliar restaurante",
-            "auxiliar de restaurante",
-            "mesera",
-            "mesero",
-            "auxiliar mesas",
-            "camarero",
-            "cajera",
-            "cajero",
-            "cajera comedor",
-            "capitana",
-            "anfitrion",
-            "saloneras",
-            "encargado",
-            "segundo encargado",
-            "administradora punto de venta",
-            "gerente punto de venta",
-            "gerente de punto de venta",
-            "coordinador punto de venta",
-        ]):
-            return "02008003"
+            "h florida parque comercial": "02008009",
+            "h molinos": "02008009",
+            "h santafe": "02008009",
+            "h tesoro": "02008009",
+            "h unicentro": "02008009",
+            "heladeria oviedo": "02008009",
+            "heladeria viva envigado": "02008009",
 
-        return ""
+            "academia de artes y formacion": "01005005",
+            "almacen no perecederos": "02009003",
+            "almacen perecederos": "02009004",
+            "bienestar y cultura organizacional": "01005003",
+            "calidad": "01011002",
+            "cocina principal": "03010003",
+            "compras": "01003001",
+            "comunicarte": "01002008",
+            "contabilidad": "01002003",
+            "control y mejora continua": "01011004",
+            "costos": "01002006",
+            "direccion administrativa": "01004001",
+            "direccion de alimentos": "03010001",
+            "direccion de calidad": "01011001",
+            "direccion operativa": "02008002",
+            "diversidad funcional": "02005007",
+            "gerencia general": "01001001",
+            "gestion ambiental": "01011005",
+            "gestion de activos fijos": "01004006",
+            "linea bebidas": "02008007",
+            "linea sal y dulce": "02008008",
+            "nomina": "01002004",
+            "personal volante puntos de venta": "02008004",
+            "seguridad y salud en el trabajo": "01005006",
+            "seleccion y contratacion": "01005004",
+            "sena": "01005008",
+            "servicios administrativos": "01004004",
+            "servicios generales": "01004003",
+            "tecnologia": "01006001",
+            "tesoreria": "01002002",
+            "transporte y distribucion": "02009002",
+            "vinculos y relaciones humanas": "01005012",
+        }
+
+        return costCenters.get(subArea, "")
 
     def _mapCostCenter3(self, value: str) -> str:
         subArea = self._normalize(value)
@@ -995,33 +977,26 @@ class ExcelReader:
         subArea = subArea.replace(".", " ")
         subArea = " ".join(subArea.split())
 
-        restaurantCodes = {
-            "museo de arte moderno": "R19",
-            "amsterdam": "R25",
+        costCenter3Codes = {
+            "amsterdam": "R24",
             "arkadia": "R21",
             "campestre": "R03",
             "cocina domicilios": "C01",
             "cocina occidente": "C02",
-            "florida etapa 2": "R24",
+            "florida etapa 2": "R25",
             "florida parque comercial": "R15",
-            "h florida parque comercial": "H05",
-            "h molinos": "H04",
-            "h santafe": "H02",
-            "h tesoro": "H01",
-            "h unicentro": "H06",
-            "heladeria oviedo": "H08",
-            "heladeria viva envigado": "H07",
             "laureles": "R07",
             "lemont": "R22",
             "llanogrande": "R10",
             "mayorca": "R09",
-            "mayorca etapa dos": "R09",
+            "mayorca etapa dos": "R17",
             "molinos": "R08",
+            "museo de arte moderno": "R19",
             "one plaza": "R18",
             "oviedo": "R06",
             "palma grande": "R16",
-            "plaza fabricato": "R23",
             "poblado": "R01",
+            "plaza fabricato": "R23",
             "premium plaza": "R11",
             "puerta del norte": "R14",
             "san diego": "R05",
@@ -1030,58 +1005,55 @@ class ExcelReader:
             "tesoro": "R04",
             "unicentro": "R02",
             "viva envigado": "R20",
+            "h florida parque comercial": "H05",
+            "h molinos": "H04",
+            "h santafe": "H02",
+            "h tesoro": "H01",
+            "h unicentro": "H06",
+            "heladeria oviedo": "H08",
+            "heladeria viva envigado": "H07",
+            "academia de artes y formacion": "ADM",
+            "almacen no perecederos": "LOG",
+            "almacen perecederos": "LOG",
+            "bienestar y cultura organizacional": "ADM",
+            "calidad": "ADM",
+            "cocina principal": "PPP",
+            "compras": "ADM",
+            "comunicarte": "ADM",
+            "contabilidad": "ADM",
+            "control y mejora continua": "ADM",
+            "costos": "ADM",
+            "direccion administrativa": "ADM",
+            "direccion de alimentos": "PPP",
+            "direccion de calidad": "ADM",
+            "direccion operativa": "OPR",
+            "diversidad funcional": "PPP",
+            "gerencia general": "ADM",
+            "gestion ambiental": "ADM",
+            "gestion de activos fijos": "ADM",
+            "linea bebidas": "TCF",
+            "linea sal y dulce": "OPR",
+            "nomina": "ADM",
+            "personal volante puntos de venta": "MV",
+            "seguridad y salud en el trabajo": "ADM",
+            "seleccion y contratacion": "ADM",
+            "sena": "ADM",
+            "servicios administrativos": "ADM",
+            "servicios generales": "ADM",
+            "tecnologia": "ADM",
+            "tesoreria": "ADM",
+            "transporte y distribucion": "PPP",
+            "vinculos y relaciones humanas": "ADM",
+            "analita de datos": "ADM",
+            "analitica de datos": "ADM",
+            "planta de helados": "PPH",
+            "planta de produccion": "PPP",
+            "direccion desarrollo humano": "ADM",
+            "direccion de logistica": "LOG",
+            "domicilios": "OPR",
         }
 
-        administrativeAreas = {
-            "diversidad funcional",
-            "tesoreria",
-            "vinculos y relaciones humanas",
-            "calidad",
-            "gerencia general",
-            "sena",
-            "seguridad y salud en el trabajo",
-            "direccion operativa",
-            "servicios administrativos",
-            "comunicarte",
-            "tecnologia",
-            "direccion de calidad",
-            "compras",
-            "control y mejora continua",
-            "costos",
-            "direccion de alimentos",
-            "contabilidad",
-            "gestion ambiental",
-            "nomina",
-            "bienestar y cultura organizacional",
-            "seleccion y contratacion",
-            "direccion de logistica",
-            "servicios generales",
-            "analitica de datos",
-            "gestion de activos fijos",
-            "direccion administrativa",
-            "direccion desarrollo humano",
-        }
-
-        code = restaurantCodes.get(subArea)
-
-        if not code and subArea in {
-            "auxiliar de produccion",
-            "auxiliar logistico operativo",
-            "almacen perecederos",
-            "planta de produccion"
-        }:
-            code = "PPP"
-
-        if not code and subArea in {
-            "domicilios",
-        }:
-            code = "OPR"
-
-        if not code and subArea == "logistica":
-            code = "LOG"
-
-        if not code and subArea in administrativeAreas:
-            code = "ADM"
+        code = costCenter3Codes.get(subArea)
 
         if not code:
             return ""
@@ -1458,162 +1430,92 @@ class ExcelReader:
         return ""
 
     def _mapNewDecreeCodeByCharge(self, value: str) -> str:
-        originalValue = " ".join(str(value or "").strip().split())
+        subArea = self._normalize(value)
 
-        if not originalValue:
+        if not subArea:
             return ""
 
-        charge = self._normalize(originalValue)
-        chargeCode = self._normalizeCode(originalValue, 4)
+        subArea = subArea.replace(".", " ")
+        subArea = " ".join(subArea.split())
 
-        if chargeCode.isdigit():
-            mappedCharge = self._mapTypeCharge(originalValue)
-            charge = self._normalize(mappedCharge)
+        newDecreeCodes = {
+            "amsterdam": "3561101",
+            "arkadia": "3561101",
+            "campestre": "3561101",
+            "cocina domicilios": "3561101",
+            "cocina occidente": "3561101",
+            "florida etapa 2": "3561101",
+            "florida parque comercial": "3561101",
+            "laureles": "3561101",
+            "lemont": "3561101",
+            "llanogrande": "3561101",
+            "mayorca": "3561101",
+            "mayorca etapa dos": "3561101",
+            "molinos": "3561101",
+            "museo de arte moderno": "3561101",
+            "one plaza": "3561101",
+            "oviedo": "3561101",
+            "palma grande": "3561101",
+            "poblado": "3561101",
+            "plaza fabricato": "3561101",
+            "premium plaza": "3561101",
+            "puerta del norte": "3561101",
+            "punto de venta": "3561101",
+            "san diego": "3561101",
+            "san nicolas": "3561101",
+            "santafe": "3561101",
+            "tesoro": "3561101",
+            "unicentro": "3561101",
+            "viva envigado": "3561101",
+            "h florida parque comercial": "3561101",
+            "h molinos": "3561101",
+            "h santafe": "3561101",
+            "h tesoro": "3561101",
+            "h unicentro": "3561101",
+            "heladeria oviedo": "3561101",
+            "heladeria viva envigado": "3561101",
+            "academia de artes y formacion": "1701001",
+            "almacen no perecederos": "2521001",
+            "almacen perecederos": "2521001",
+            "bienestar y cultura organizacional": "1701001",
+            "calidad": "1701001",
+            "cocina principal": "2108901",
+            "compras": "1701001",
+            "comunicarte": "1701001",
+            "contabilidad": "1701001",
+            "control y mejora continua": "1701001",
+            "costos": "1701001",
+            "direccion administrativa": "1701001",
+            "direccion de alimentos": "2108901",
+            "direccion de calidad": "1701001",
+            "direccion operativa": "2108901",
+            "diversidad funcional": "2108901",
+            "gerencia general": "1701001",
+            "gestion ambiental": "1701001",
+            "gestion de activos fijos": "1701001",
+            "linea bebidas": "3561101",
+            "linea sal y dulce": "2108901",
+            "nomina": "1701001",
+            "personal volante puntos de venta": "3561101",
+            "seguridad y salud en el trabajo": "1701001",
+            "seleccion y contratacion": "1701001",
+            "sena": "1701001",
+            "servicios administrativos": "1701001",
+            "servicios generales": "1701001",
+            "tecnologia": "1701001",
+            "tesoreria": "1701001",
+            "transporte y distribucion": "2108901",
+            "vinculos y relaciones humanas": "1701001",
+            "analita de datos": "1701001",
+            "analitica de datos": "1701001",
+            "planta de helados": "2108901",
+            "planta de produccion": "2108901",
+            "direccion desarrollo humano": "1701001",
+            "direccion de logistica": "2521001",
+            "domicilios": "2108901",
+        }
 
-        if not charge:
-            return ""
-        
-        if "teletrabajo" in charge:
-            return "1829902"
-
-        maintenanceKeywords = [
-            "mantenimiento",
-            "tecnico mantenimiento",
-            "tecnico locativo",
-            "refrigeracion",
-            "mecanico",
-            "obras",
-        ]
-
-        if any(keyword in charge for keyword in maintenanceKeywords):
-            return "3331201"
-
-        transportKeywords = [
-            "transporte",
-            "conductor",
-            "auxiliar conductor",
-            "mensajero",
-            "domiciliario",
-        ]
-
-        if any(keyword in charge for keyword in transportKeywords):
-            return "4492201"
-
-        logisticsKeywords = [
-            "logistica",
-            "logistico",
-            "almacen",
-            "bodega",
-            "inventario",
-            "inventarios",
-            "despacho",
-            "despachos",
-            "distribucion",
-            "abastecimiento",
-            "recibo",
-            "cava",
-        ]
-
-        if any(keyword in charge for keyword in logisticsKeywords):
-            return "2521001"
-
-        productionKeywords = [
-            "produccion",
-            "planta",
-            "cocina principal",
-            "heladeria principal",
-            "operario",
-            "alistamiento",
-            "empaque",
-            "empacador",
-            "enfriamiento",
-            "reposteria",
-            "quesos",
-            "ensambles",
-            "conos",
-            "tostadora",
-            "chef cocina principal",
-        ]
-
-        if any(keyword in charge for keyword in productionKeywords):
-            return "2108901"
-
-        administrativeKeywords = [
-            "aprendiz lectiva",
-            "aprendiz productiva",
-            "aprendiz",
-            "administrativo",
-            "administrativa",
-            "analista",
-            "coordinador",
-            "coordinadora",
-            "director",
-            "directora",
-            "gerente general",
-            "jefe",
-            "lider",
-            "tesoreria",
-            "contabilidad",
-            "nomina",
-            "compras",
-            "desarrollo humano",
-            "tecnologia",
-            "informatica",
-            "calidad",
-            "sst",
-            "seguridad y salud",
-            "facturacion",
-            "costos",
-            "bienestar",
-            "legal",
-            "financiero",
-            "financiera",
-            "impuestos",
-            "mercadeo",
-            "call center",
-            "centro de experiencia",
-        ]
-
-        if any(keyword in charge for keyword in administrativeKeywords):
-            return "1701001"
-
-        pointSaleKeywords = [
-            "punto de venta",
-            "restaurante",
-            "mesera",
-            "mesero",
-            "mesas",
-            "auxiliar mesas",
-            "camarero",
-            "office",
-            "cocinero",
-            "cocina",
-            "ayudante de cocina",
-            "plancha",
-            "plancha sal",
-            "bebidas",
-            "heladera",
-            "postres",
-            "pitas",
-            "ensaladas",
-            "crepera",
-            "cajera",
-            "cajero",
-            "cajera comedor",
-            "cajera helados",
-            "steward",
-            "platero",
-            "capitana",
-            "anfitrion",
-            "saloneras",
-            "aseo",
-            "servicios generales",
-        ]
-
-        if any(keyword in charge for keyword in pointSaleKeywords):
-            return "3561101"
-
-        return "3561101"
+        return newDecreeCodes.get(subArea, "")
 
     def _mapMaritalStatus(self, value: str) -> str:
         maritalStatus = self._normalize(value)
@@ -2485,85 +2387,3 @@ class ExcelReader:
             return "V"
 
         return "F"
-
-    def _writeBankAccountChangesSheet(self, templateWorkbook, sourceRows: list[dict[str, Any]]) -> None:
-        sheetName = "CAMBIOS CUENTAS"
-
-        if sheetName not in templateWorkbook.sheetnames:
-            raise ValueError(f"No se encontró la hoja {sheetName} en la plantilla.")
-
-        worksheet = templateWorkbook[sheetName]
-
-        startRow = 5
-        currentRow = startRow
-
-        self._clearBankAccountChangesSheet(worksheet=worksheet, startRow=startRow)
-
-        expectedCompanyRut = self._cleanRut(self.COMPANY_RUT_VALUE)
-
-        for sourceRow in sourceRows:
-            companyRut = self._cleanRut(self._getCellText(sourceRow.get(self._normalize(self.COMPANY_RUT_COLUMN))))
-
-            if companyRut != expectedCompanyRut:
-                continue
-
-            birthCountry = self._normalize(
-                self._getCellText(sourceRow.get(self._normalize("colaborador - nacionalidad")))
-            )
-
-            if birthCountry in {"", "colombiana", "colombiano", "colombia"}:
-                continue
-
-            employeeDocument = self._getCellText(
-                sourceRow.get(self._normalize("colaborador - número de documento"))
-                or sourceRow.get(self._normalize("cedula numero"))
-            )
-
-            employeeName = self._getCellText(
-                sourceRow.get(self._normalize("colaborador - nombre completo"))
-                or sourceRow.get(self._normalize("apellidos y nombres"))
-            )
-
-            bankName = self._mapBankCorporation(
-                self._getCellText(
-                    sourceRow.get(self._normalize("colaborador - banco"))
-                    or sourceRow.get(self._normalize("codigo del banco"))
-                )
-            )
-
-            accountNumber = self._getCellText(
-                sourceRow.get(self._normalize("colaborador - número de cuenta"))
-                or sourceRow.get(self._normalize("numero de cuenta"))
-            )
-
-            accountTypeText = self._getCellText(
-                sourceRow.get(self._normalize("colaborador - tipo de cuenta"))
-                or sourceRow.get(self._normalize("tipo de cuenta"))
-            )
-
-            accountType = (
-                "001"
-                if self._normalize(accountTypeText) == "ahorro"
-                else "002"
-                if self._normalize(accountTypeText) == "corriente"
-                else "000"
-            )
-
-            worksheet.cell(row=currentRow, column=1, value=employeeDocument)
-            worksheet.cell(row=currentRow, column=2, value=employeeDocument)
-            worksheet.cell(row=currentRow, column=3, value=employeeName)
-            worksheet.cell(row=currentRow, column=4, value=bankName)
-            worksheet.cell(row=currentRow, column=5, value=accountNumber)
-            worksheet.cell(row=currentRow, column=6, value=accountType)
-
-            for column in range(1, 7):
-                worksheet.cell(row=currentRow, column=column).number_format = "@"
-
-            currentRow += 1
-
-    def _clearBankAccountChangesSheet(self, worksheet, startRow: int) -> None:
-        for rowNumber in range(startRow, worksheet.max_row + 1):
-            for columnNumber in range(1, 9):  # A hasta H
-                cell = worksheet.cell(row=rowNumber, column=columnNumber)
-                cell.value = None
-                cell.number_format = "@"
