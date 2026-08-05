@@ -39,6 +39,12 @@ class LoanRepository(ILoanRepository):
 
         return PaginatedResult(items=items, total=total, page=pagination.page, pageSize=pagination.pageSize, totalPages=totalPages,)
 
+    def getById(self, IdLoan: int) -> Optional[Loan]:
+        return self.db.query(Loan).options(selectinload(Loan.loanInstallments)).filter(Loan.IdLoan == IdLoan).first()
+
+    def getByIdForUpdate(self, IdLoan: int) -> Optional[Loan]:
+        return self.db.query(Loan).options(selectinload(Loan.loanInstallments)).filter(Loan.IdLoan == IdLoan).with_for_update().first()
+
     def create(self, loanData: Loan) -> Loan:
         try:
             nowColombia = self._nowColombia()
@@ -59,3 +65,26 @@ class LoanRepository(ILoanRepository):
         except SQLAlchemyError as e:
             self.db.rollback()
             raise Exception(f"Error al crear el préstamo: {str(e)}")
+
+    def updateStatus(self, loanData: Loan, IdLoanStatus: int, loanStatusName: str, updatedByUserName: str, updatedAt: datetime) -> Loan:
+        loanData.IdLoanStatus = IdLoanStatus
+        loanData.loanStatusName = loanStatusName
+        loanData.updatedByUserName = updatedByUserName
+        loanData.updatedAt = updatedAt
+
+        self.db.flush()
+
+        return loanData
+
+    def getScheduledLoanIds(self) -> list[int]:
+        rows = (self.db.query(Loan.IdLoan).filter(Loan.IdLoanStatus.in_([1, 2])).order_by(Loan.IdLoan.asc()).all())
+        return [row[0] for row in rows]
+
+    def getByIdForScheduled(self, IdLoan: int,) -> Optional[Loan]:
+        return (self.db.query(Loan).options(selectinload(Loan.loanInstallments)).filter(Loan.IdLoan == IdLoan).with_for_update().first())
+
+    def commit(self) -> None:
+        self.db.commit()
+
+    def rollback(self) -> None:
+        self.db.rollback()
