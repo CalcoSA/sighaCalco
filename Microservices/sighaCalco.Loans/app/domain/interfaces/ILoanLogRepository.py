@@ -13,3 +13,7 @@ class ILoanLogRepository(ABC):
     @abstractmethod
     def create(self, loanLogData: LoanLog) -> LoanLog:
         pass
+
+    @abstractmethod
+    def add(self, loanLogData: LoanLog) -> LoanLog:
+        pass
