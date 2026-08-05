@@ -4,7 +4,6 @@ from app.domain.entities.loanLog import LoanLog
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, date, time
 from sqlalchemy.orm import Session
-from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional
 from math import ceil
@@ -40,21 +39,8 @@ class LoanLogRepository(ILoanLogRepository):
 
     def create(self, loanLogData: LoanLog) -> LoanLog:
         try:
-            newLoanLog = LoanLog(
-                actionType=loanLogData.actionType.strip(),
-                IdLoan=loanLogData.IdLoan,
-                IdLoanInstallment=loanLogData.IdLoanInstallment,
-                installmentNumber=loanLogData.installmentNumber,
-                employeeDocumentNumber=loanLogData.employeeDocumentNumber.strip() if loanLogData.employeeDocumentNumber else None,
-                conceptName=loanLogData.conceptName.strip() if loanLogData.conceptName else None,
-                loanStatusName=loanLogData.loanStatusName.strip() if loanLogData.loanStatusName else None,
-                installmentStatusName=loanLogData.installmentStatusName.strip() if loanLogData.installmentStatusName else None,
-                observation=loanLogData.observation.strip() if loanLogData.observation else None,
-                actorUserName=loanLogData.actorUserName.strip() if loanLogData.actorUserName else None,
-                actionDate=self._nowColombia(),
-            )
+            newLoanLog = self.add(loanLogData)
 
-            self.db.add(newLoanLog)
             self.db.commit()
             self.db.refresh(newLoanLog)
 
@@ -63,3 +49,47 @@ class LoanLogRepository(ILoanLogRepository):
         except SQLAlchemyError as e:
             self.db.rollback()
             raise Exception(f"Error al crear el log del préstamo: {str(e)}")
+
+    def add(self, loanLogData: LoanLog) -> LoanLog:
+        newLoanLog = LoanLog(
+            actionType=loanLogData.actionType.strip(),
+            IdLoan=loanLogData.IdLoan,
+            IdLoanInstallment=loanLogData.IdLoanInstallment,
+            installmentNumber=loanLogData.installmentNumber,
+            employeeDocumentNumber=(
+                loanLogData.employeeDocumentNumber.strip()
+                if loanLogData.employeeDocumentNumber
+                else None
+            ),
+            conceptName=(
+                loanLogData.conceptName.strip()
+                if loanLogData.conceptName
+                else None
+            ),
+            loanStatusName=(
+                loanLogData.loanStatusName.strip()
+                if loanLogData.loanStatusName
+                else None
+            ),
+            installmentStatusName=(
+                loanLogData.installmentStatusName.strip()
+                if loanLogData.installmentStatusName
+                else None
+            ),
+            observation=(
+                loanLogData.observation.strip()
+                if loanLogData.observation
+                else None
+            ),
+            actorUserName=(
+                loanLogData.actorUserName.strip()
+                if loanLogData.actorUserName
+                else None
+            ),
+            actionDate=self._nowColombia(),
+        )
+
+        self.db.add(newLoanLog)
+        self.db.flush()
+
+        return newLoanLog

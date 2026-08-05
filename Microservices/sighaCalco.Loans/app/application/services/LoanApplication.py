@@ -1,20 +1,32 @@
+from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
+from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
+from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.application.interfaces.ILoanApplication import ILoanApplication
 from app.domain.interfaces.ILoanLogRepository import ILoanLogRepository
 from app.common.pagination import PaginationParams, PaginatedResult
+from app.domain.entities.loanStatusHistory import LoanStatusHistory
 from app.domain.interfaces.ILoanRepository import ILoanRepository
 from app.domain.entities.loanInstallment import LoanInstallment
-from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto
+from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
 from app.domain.entities.loanLog import LoanLog
+from sqlalchemy.exc import SQLAlchemyError
 from app.domain.entities.loan import Loan
+from datetime import date, datetime
+from calendar import monthrange
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Optional
-from datetime import date
 
 class LoanApplication(ILoanApplication):
 
-    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository):
+    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository, loanStatusHistoryRepository: ILoanStatusHistoryRepository, loanStatusRepository: ILoanStatusRepository):
         self.loanRepository = loanRepository
         self.loanLogRepository = loanLogRepository
+        self.loanStatusHistoryRepository = loanStatusHistoryRepository
+        self.loanStatusRepository = loanStatusRepository
+
+    def _nowColombia(self) -> datetime:
+        return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
 
     def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
         data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo)
@@ -62,10 +74,11 @@ class LoanApplication(ILoanApplication):
         ]
 
         createdLoan = self.loanRepository.create(loan)
-
+        self._createLoanStatusHistory(createdLoan)
+        self.loanRepository.commit()
         self._createLoanLogs(createdLoan)
 
-        return createdLoan
+        return self._toDto(createdLoan)
 
     def _validateCreate(self, loanData: LoanCreateDto) -> None:
 
@@ -168,3 +181,312 @@ class LoanApplication(ILoanApplication):
                     actorUserName=loan.createdByUserName,
                 )
             )
+
+    def _createLoanStatusHistory(self, loan: Loan) -> None:
+        self.loanStatusHistoryRepository.create(
+            LoanStatusHistory(
+                IdLoan=loan.IdLoan,
+                IdLoanStatus=loan.IdLoanStatus,
+                observation="Creación.",
+                createdAt=loan.createdAt,
+                createdByUserName=loan.createdByUserName,
+            )
+        )
+
+    def updateLoanStatus(self, IdLoan: int, loanData: LoanUpdateDto) -> LoanDto:
+        observation = loanData.observation.strip()
+        updatedByUserName = (loanData.updatedByUserName.strip())
+
+        if not observation:
+            raise ValueError("La observación es obligatoria.")
+
+        if not updatedByUserName:
+            raise ValueError("El usuario que modifica el préstamo es obligatorio.")
+
+        try:
+            loanFound = self.loanRepository.getByIdForUpdate(IdLoan)
+
+            if not loanFound:
+                raise ValueError("Préstamo no encontrado.")
+
+            if loanFound.IdLoanStatus == 4:
+                raise ValueError("No se puede modificar un préstamo que se encuentra Terminado.")
+
+            if loanFound.IdLoanStatus == 5:
+                raise ValueError("No se puede modificar un préstamo que se encuentra Cancelado.")
+
+            loanStatusFound = self.loanStatusRepository.getById(loanData.IdLoanStatus)
+
+            if not loanStatusFound:
+                raise ValueError("El estado seleccionado no existe.")
+
+            previousStatusName = loanFound.loanStatusName
+            newStatusName = loanStatusFound.nameLoanStatus
+            nowColombia = self._nowColombia()
+
+            updatedLoan = self.loanRepository.updateStatus(
+                loanData=loanFound,
+                IdLoanStatus=loanData.IdLoanStatus,
+                loanStatusName=newStatusName,
+                updatedByUserName=updatedByUserName,
+                updatedAt=nowColombia,
+            )
+
+            self.loanStatusHistoryRepository.create(
+                LoanStatusHistory(
+                    IdLoan=updatedLoan.IdLoan,
+                    IdLoanStatus=loanData.IdLoanStatus,
+                    observation=observation,
+                    createdAt=nowColombia,
+                    createdByUserName=updatedByUserName,
+                )
+            )
+
+            self.loanLogRepository.add(
+                LoanLog(
+                    actionType="Actualización de estado",
+                    IdLoan=updatedLoan.IdLoan,
+                    IdLoanInstallment=None,
+                    installmentNumber=None,
+                    employeeDocumentNumber=(updatedLoan.employeeDocumentNumber),
+                    conceptName=updatedLoan.conceptName,
+                    loanStatusName=newStatusName,
+                    installmentStatusName=None,
+                    observation=(
+                        f"El estado del préstamo cambió de "
+                        f"{previousStatusName} a "
+                        f"{newStatusName}. "
+                        f"Observación: {observation}"
+                    ),
+                    actorUserName=updatedByUserName,
+                )
+            )
+
+            self.loanRepository.commit()
+            refreshedLoan = self.loanRepository.getById(IdLoan)
+
+            if not refreshedLoan:
+                raise Exception("No fue posible recuperar el préstamo actualizado.")
+
+            return LoanDto.model_validate(refreshedLoan)
+
+        except ValueError:
+            self.loanRepository.rollback()
+            raise
+
+        except SQLAlchemyError as exception:
+            self.loanRepository.rollback()
+
+            raise Exception("Error de base de datos al actualizar " f"el estado del préstamo: {str(exception)}") from exception
+
+        except Exception as exception:
+            self.loanRepository.rollback()
+
+            raise Exception("Error al actualizar el estado del " f"préstamo: {str(exception)}") from exception
+
+    def processScheduledLoans(self, actorUserName: str) -> LoanScheduledDto:
+        currentDate = datetime.now(ZoneInfo("America/Bogota")).date()
+        (cycleName, targetInstallmentDate, allowedPlans) = self.getCurrentScheduledCycle(currentDate)
+        result = LoanScheduledDto(executionDate=currentDate, cycleName=cycleName, targetInstallmentDate=targetInstallmentDate)
+        loanIds = self.loanRepository.getScheduledLoanIds()
+        result.reviewedLoans = len(loanIds)
+        self.loanRepository.rollback()
+
+        for IdLoan in loanIds:
+            try:
+                loan = self.loanRepository.getByIdForScheduled(IdLoan)
+
+                if not loan:
+                    result.skippedLoans += 1
+                    self.loanRepository.rollback()
+                    continue
+
+                wasModified = self._processScheduledLoan(
+                    loan=loan,
+                    targetInstallmentDate=targetInstallmentDate,
+                    allowedPlans=allowedPlans,
+                    actorUserName=actorUserName,
+                    result=result,
+                )
+
+                if wasModified:
+                    self.loanRepository.commit()
+                else:
+                    self.loanRepository.rollback()
+
+            except Exception as exception:
+                self.loanRepository.rollback()
+                result.failedLoans += 1
+                result.errors.append(f"Préstamo {IdLoan}: {str(exception)}")
+
+        return result
+
+    def getCurrentScheduledCycle(self, currentDate: date,) -> tuple[str, date, set[str]]:
+
+        if currentDate.day <= 15:
+            targetInstallmentDate = date(currentDate.year, currentDate.month, 15,)
+
+            return ("Primera quincena", targetInstallmentDate, { "primera quincena", "ambas quincenas", },)
+
+        lastDayOfMonth = monthrange(currentDate.year, currentDate.month,)[1]
+        targetInstallmentDate = date(currentDate.year, currentDate.month, lastDayOfMonth,)
+
+        return ("Segunda quincena", targetInstallmentDate, { "segunda quincena", "ambas quincenas", },)
+
+    def _processScheduledLoan(self, loan: Loan, targetInstallmentDate: date, allowedPlans: set[str], actorUserName: str, result: LoanScheduledDto,) -> bool:
+
+        if loan.IdLoanStatus not in [1, 2]:
+            result.skippedLoans += 1
+            return False
+
+        deductionPlanName = (loan.deductionPlanName.strip().lower())
+
+        if deductionPlanName not in allowedPlans:
+            result.skippedLoans += 1
+            return False
+
+        if loan.startDiscountDate > targetInstallmentDate:
+            result.skippedLoans += 1
+            return False
+
+        registeredInstallments = len(loan.loanInstallments)
+
+        if registeredInstallments != loan.numberInstallments:
+            self._addScheduledLoanLog(
+                loan=loan,
+                actionType="Validación de cuotas",
+                observation=("No se procesó el préstamo porque " f"numberInstallments indica " f"{loan.numberInstallments} cuotas, pero " f"se encontraron {registeredInstallments} cuotas registradas."),
+                actorUserName=actorUserName,
+            )
+
+            result.failedLoans += 1
+            result.errors.append(f"Préstamo {loan.IdLoan}: el número de cuotas no coincide con las cuotas registradas.")
+
+            return True
+
+        wasModified = False
+
+        if loan.IdLoanStatus == 2:
+            loan.IdLoanStatus = 1
+            loan.loanStatusName = "Activo"
+            loan.updatedByUserName = actorUserName
+            loan.updatedAt = self._nowColombia()
+            self._addScheduledLoanLog(
+                loan=loan,
+                actionType="Activación automática",
+                observation=("El préstamo cambió de Inactivo a Activo porque llegó la quincena correspondiente para iniciar el descuento."),
+                actorUserName=actorUserName,
+            )
+
+            result.activatedLoans += 1
+            wasModified = True
+
+        pendingInstallments = sorted(
+            [
+                installment
+                for installment in loan.loanInstallments
+                if not installment.isPaid
+            ],
+            key=lambda installment: (installment.commitmentDate, installment.installmentNumber,),
+        )
+
+        if not pendingInstallments:
+            result.skippedLoans += 1
+            return wasModified
+
+        targetInstallments = [
+            installment
+            for installment in pendingInstallments
+            if (installment.commitmentDate == targetInstallmentDate)
+        ]
+
+        if not targetInstallments:
+            result.skippedLoans += 1
+            return wasModified
+
+        if len(targetInstallments) > 1:
+            raise ValueError("Existe más de una cuota pendiente con fecha " f"compromiso {targetInstallmentDate}.")
+
+        installment = targetInstallments[0]
+        installment.isPaid = True
+        installment.paymentDate = targetInstallmentDate
+        loan.updatedByUserName = actorUserName
+        loan.updatedAt = self._nowColombia()
+
+        self._recalculateScheduledLoan(loan)
+        self._addScheduledLoanLog(
+            loan=loan,
+            actionType="Pago automático de cuota",
+            IdLoanInstallment=(installment.IdLoanInstallment),
+            installmentNumber=(installment.installmentNumber),
+            installmentStatusName="Pagada",
+            observation=("La tarea marcó como pagada la cuota número " f"{installment.installmentNumber}, con fecha " f"compromiso {installment.commitmentDate} y " f"valor {installment.installmentValue}."),
+            actorUserName=actorUserName,
+        )
+
+        result.paidInstallments += 1
+        result.processedLoanIds.append(loan.IdLoan)
+
+        remainingPendingInstallments = [
+            currentInstallment
+            for currentInstallment in loan.loanInstallments
+            if not currentInstallment.isPaid
+        ]
+
+        if not remainingPendingInstallments:
+            loan.IdLoanStatus = 4
+            loan.loanStatusName = "Terminado"
+            loan.endDiscountDate = targetInstallmentDate
+            loan.updatedByUserName = actorUserName
+            loan.updatedAt = self._nowColombia()
+
+            self._addScheduledLoanLog(
+                loan=loan,
+                actionType="Terminación automática",
+                observation=("El préstamo cambió a Terminado porque todas sus cuotas se encuentran pagadas."),
+                actorUserName=actorUserName,
+            )
+
+            result.finishedLoans += 1
+
+        return True
+
+    def _recalculateScheduledLoan(self, loan: Loan,) -> None:
+
+        paidInstallments = [
+            installment
+            for installment in loan.loanInstallments
+            if installment.isPaid
+        ]
+
+        pendingInstallments = [
+            installment
+            for installment in loan.loanInstallments
+            if not installment.isPaid
+        ]
+
+        loan.paidInstallments = len(paidInstallments)
+
+        loan.remainingAmount = sum(
+            (
+                installment.installmentValue
+                for installment in pendingInstallments
+            ),
+            Decimal("0"),
+        ).quantize(Decimal("0.01"))
+
+    def _addScheduledLoanLog(self, loan: Loan, actionType: str, observation: str, actorUserName: str, IdLoanInstallment: Optional[int] = None, installmentNumber: Optional[int] = None, installmentStatusName: Optional[str] = None,) -> None:
+        self.loanLogRepository.add(
+            LoanLog(
+                actionType=actionType,
+                IdLoan=loan.IdLoan,
+                IdLoanInstallment=IdLoanInstallment,
+                installmentNumber=installmentNumber,
+                employeeDocumentNumber=(loan.employeeDocumentNumber),
+                conceptName=loan.conceptName,
+                loanStatusName=loan.loanStatusName,
+                installmentStatusName=(installmentStatusName),
+                observation=observation,
+                actorUserName=actorUserName,
+            )
+        )

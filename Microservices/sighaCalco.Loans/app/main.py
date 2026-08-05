@@ -1,3 +1,5 @@
+from app.infrastructure.scheduler.loanScheduler import scheduler, configureLoanScheduler
+from app.api.loanStatusHistoryController import router as loanStatusHistoryRouter
 from app.api.typeBankAccountController import router as typeBankAccountRouter
 from app.api.typeWithdrawalController import router as typeWithdrawalRouter
 from app.infrastructure.logging.loggerConfig import setupLogging, getLogger
@@ -20,6 +22,7 @@ from app.api.bankController import router as bankRouter
 from app.api.loanController import router as loanRouter
 from fastapi.middleware.cors import CORSMiddleware
 from app.infrastructure.db.base import Base
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
 from time import time
@@ -29,8 +32,21 @@ load_dotenv()
 setupLogging()
 logger = getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    configureLoanScheduler()
+    scheduler.start()
+    logger.info("Scheduler de préstamos iniciado correctamente.")
+
+    yield
+
+    if scheduler.running:
+        scheduler.shutdown(wait=False)
+
+        logger.info("Scheduler de préstamos detenido correctamente.")
+
 #app = FastAPI(title="Assistance API", version="1.0.0", root_path="/api")
-app = FastAPI(title="SighaCalco Loans API", version="1.0.0")
+app = FastAPI(title="SighaCalco Loans API", version="1.0.0", lifespan=lifespan,)
 
 def getCorsOrigins() -> list[str]:
     rawOrigins = os.getenv("CORS_ALLOWED_ORIGINS", "")
@@ -81,6 +97,7 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+app.include_router(loanStatusHistoryRouter)
 app.include_router(typeBankAccountRouter)
 app.include_router(typeWithdrawalRouter)
 app.include_router(payrollSinergyRouter)

@@ -53,3 +53,8 @@ class LoanCreateDto(BaseModel):
     observation: Optional[str] = None
     createdByUserName: str = Field(..., min_length=1, max_length=250)
     loanInstallments: List[LoanInstallmentCreateDto]
+
+class LoanUpdateDto(BaseModel):
+    IdLoanStatus: int = Field(..., ge=1, le=5)
+    observation: str = Field(..., min_length=1)
+    updatedByUserName: str = Field(..., min_length=1, max_length=250)
