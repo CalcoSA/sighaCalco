@@ -25,7 +25,7 @@ class ExcelReader:
     def __init__(self):
         self.fieldMappings = self._buildFieldMappings()
 
-    def generateTemplate(self, fileName: str, content: bytes, dateFrom: date, dateTo: date,) -> GeneratedFileDto:
+    def generateTemplate(self, fileName: str, content: bytes, dateFrom: date, dateTo: date, previousMaster: bytes | None = None) -> GeneratedFileDto:
         sourceWorkbook = load_workbook(BytesIO(content), data_only=True, keep_links=False)
         sourceWorksheet = sourceWorkbook.active
         headerRowNumber, sourceColumnMap = self._findSourceColumns(sourceWorksheet)
@@ -38,6 +38,9 @@ class ExcelReader:
         startRow = campoRow + 1
 
         self._writeTransformedRows(templateWorksheet=templateWorksheet, templateFieldMap=templateFieldMap, sourceRows=sourceRows, startRow=startRow,)
+        self._writeMasterChangesSheet(templateWorkbook=templateWorkbook, currentContent=content, previousContent=previousMaster)
+        self._writeSalaryChangesSheet(templateWorkbook=templateWorkbook, currentContent=content, previousContent=previousMaster)
+        self._writeRetirementsSheet(templateWorkbook=templateWorkbook, currentContent=content, dateFrom=dateFrom, dateTo=dateTo)
         output = BytesIO()
         templateWorkbook.save(output)
         output.seek(0)
@@ -136,10 +139,11 @@ class ExcelReader:
                 sourceColumns=["trabajo - nombre sub-area asignada(o)"],
                 transform=lambda row: self._mapCostCenter3(self._getCellText(row["trabajo - nombre sub-area asignada(o)"])),
             ),
+
             FieldMapping(
                 targetField="centro_costos_4",
                 sourceColumns=["campos personalizados de trabajo - dia de descanso 2 (t)"],
-                transform=lambda row: self._getCellText(row["campos personalizados de trabajo - dia de descanso 2 (t)"]),
+                transform=lambda row: self._mapRestDayCode(self._getCellText(row["campos personalizados de trabajo - dia de descanso 2 (t)"])),
             ),
             FieldMapping(
                 targetField="tipo_empleado",
@@ -432,7 +436,7 @@ class ExcelReader:
             FieldMapping(
                 targetField="escalafon",
                 sourceColumns=[],
-                transform=lambda row: "220",
+                transform=lambda row: "210",
             ),
             FieldMapping(
                 targetField="fecha_escalafon",
@@ -809,10 +813,10 @@ class ExcelReader:
             snombre = ""
 
         return {
-            "pnombre": pnombre,
-            "snombre": snombre,
-            "papellido": papellido,
-            "spellido": spellido,
+            "pnombre": pnombre.upper(),
+            "snombre": snombre.upper(),
+            "papellido": papellido.upper(),
+            "spellido": spellido.upper(),
         }
 
     def _mapDocumentTypeByCode(self, value: str) -> str:
@@ -886,6 +890,89 @@ class ExcelReader:
         return ""
 
     def _mapCostCenter2(self, value: str) -> str:
+        subArea = self._normalize(value)
+
+        if not subArea:
+            return ""
+
+        subArea = subArea.replace(".", " ")
+        subArea = " ".join(subArea.split())
+
+        costCenters = {
+            "amsterdam": "02005009",
+            "arkadia": "02005009",
+            "campestre": "02005009",
+            "cocina domicilios": "02005009",
+            "cocina occidente": "02005009",
+            "florida etapa 2": "02005009",
+            "florida parque comercial": "02005009",
+            "laureles": "02005009",
+            "lemont": "02005009",
+            "llanogrande": "02005009",
+            "mayorca": "02005009",
+            "mayorca etapa dos": "02005009",
+            "molinos": "02005009",
+            "museo de arte moderno": "02005009",
+            "one plaza": "02005009",
+            "oviedo": "02005009",
+            "palma grande": "02005009",
+            "poblado": "02005009",
+            "plaza fabricato": "02005009",
+            "premium plaza": "02005009",
+            "puerta del norte": "02005009",
+            "punto de venta": "02005009",
+            "san diego": "02005009",
+            "san nicolas": "02005009",
+            "santafe": "02005009",
+            "tesoro": "02005009",
+            "unicentro": "02005009",
+            "viva envigado": "02005009",
+
+            "h florida parque comercial": "02005009",
+            "h molinos": "02005009",
+            "h santafe": "02005009",
+            "h tesoro": "02005009",
+            "h unicentro": "02005009",
+            "heladeria oviedo": "02005009",
+            "heladeria viva envigado": "02005009",
+
+            "academia de artes y formacion": "01005005",
+            "almacen no perecederos": "02009003",
+            "almacen perecederos": "02009004",
+            "bienestar y cultura organizacional": "01005003",
+            "calidad": "01011002",
+            "cocina principal": "03010003",
+            "compras": "01003001",
+            "comunicarte": "01002008",
+            "contabilidad": "01002003",
+            "control y mejora continua": "01011004",
+            "costos": "01002006",
+            "direccion administrativa": "01004001",
+            "direccion de alimentos": "03010001",
+            "direccion de calidad": "01011001",
+            "direccion operativa": "02008002",
+            "diversidad funcional": "02005007",
+            "gerencia general": "01001001",
+            "gestion ambiental": "01011005",
+            "gestion de activos fijos": "01004006",
+            "linea bebidas": "02008007",
+            "linea sal y dulce": "02008008",
+            "nomina": "01002004",
+            "personal volante puntos de venta": "02008004",
+            "seguridad y salud en el trabajo": "01005006",
+            "seleccion y contratacion": "01005004",
+            "sena": "01005008",
+            "servicios administrativos": "01004004",
+            "servicios generales": "01004003",
+            "tecnologia": "01006001",
+            "tesoreria": "01002002",
+            "transporte y distribucion": "02009002",
+            "vinculos y relaciones humanas": "01005012",
+        }
+
+        return costCenters.get(subArea, "")
+
+    def _mapCostCenter2_1(self, value: str) -> str:
         subArea = self._normalize(value)
 
         if not subArea:
@@ -1059,6 +1146,27 @@ class ExcelReader:
             return ""
 
         return f"{code}-002"
+
+    def _mapRestDayCode(self, value: str) -> str:
+        restDay = self._normalize(value)
+
+        if not restDay:
+            return ""
+
+        restDay = restDay.replace(".", " ")
+        restDay = " ".join(restDay.split())
+
+        restDays = {
+            "lunes": "001",
+            "martes": "002",
+            "miercoles": "003",
+            "jueves": "004",
+            "viernes": "005",
+            "sabado": "006",
+            "domingo": "007",
+        }
+
+        return restDays.get(restDay, "")
 
     def _mapContractType(self, typeChargeValue: str) -> str:
         typeCharge = self._normalize(typeChargeValue)
@@ -2387,3 +2495,475 @@ class ExcelReader:
             return "V"
 
         return "F"
+
+    def _writeMasterChangesSheet(self, templateWorkbook, currentContent: bytes, previousContent: bytes | None) -> None:
+        sheetName = "Cambios de Maestro"
+
+        if sheetName not in templateWorkbook.sheetnames:
+            raise ValueError(f"No se encontró la hoja {sheetName} en la plantilla.")
+
+        worksheet = templateWorkbook[sheetName]
+        self._clearMasterChangesSheet(worksheet)
+
+        if not previousContent:
+            return
+
+        currentWorkbook = load_workbook(BytesIO(currentContent), data_only=True, keep_links=False)
+        previousWorkbook = load_workbook(BytesIO(previousContent), data_only=True, keep_links=False)
+        currentWorksheet = currentWorkbook.active
+        previousWorksheet = previousWorkbook.active
+
+        requiredColumns = {
+            self._normalize(self.COMPANY_RUT_COLUMN),
+            self._normalize("colaborador - numero de documento"),
+            self._normalize("colaborador - nombre completo"),
+            self._normalize("trabajo - tasa de retención (%)"),
+            self._normalize("plan - fondo de pensiones"),
+            self._normalize("colaborador - banco"),
+            self._normalize("campos personalizados de colaborador - barrio"),
+            self._normalize("trabajo - sobreescribir caja"),
+            self._normalize("trabajo - cargo"),
+            self._normalize("trabajo - nombre sub-area asignada(o)"),
+            self._normalize("trabajo - nombre sub-area asignada(o)"),
+            self._normalize("trabajo - nombre sub-area nivel 1"),
+            self._normalize("trabajo - nombre sub-area asignada(o)"),
+            self._normalize("trabajo - nombre sub-area asignada(o)"),
+            self._normalize("campos personalizados de trabajo - dia de descanso 2 (t)"),
+            self._normalize("campos personalizados de trabajo - dia de descanso 2 (t)"),
+            self._normalize("colaborador - municipio"),
+            self._normalize("colaborador - email"),
+            self._normalize("colaborador - numero de cuenta"),
+            self._normalize("colaborador - direccion"),
+            self._normalize("colaborador - departamento"),
+            self._normalize("plan - eps"),
+            self._normalize("colaborador - estado civil"),
+            self._normalize("trabajo - fecha ingreso compania"),
+            self._normalize("colaborador - fecha de nacimiento"),
+            self._normalize("trabajo - fecha termino trabajo"),
+            self._normalize("campos personalizados de colaborador - lugar de nacimiento"),
+            self._normalize("campos personalizados de colaborador - nivel academico"),
+            self._normalize("colaborador - sexo"),
+            self._normalize("colaborador - telefono particular"),
+            self._normalize("trabajo - tipo salario"),
+        }
+
+        currentHeaderRow, currentColumnMap = self._findColumnsByNames( worksheet=currentWorksheet, requiredColumns=requiredColumns)
+        previousHeaderRow, previousColumnMap = self._findColumnsByNames(worksheet=previousWorksheet, requiredColumns=requiredColumns)
+        currentRows = self._getSourceRowsByCompanyRut(worksheet=currentWorksheet, headerRowNumber=currentHeaderRow, columnMap=currentColumnMap)
+        previousRows = self._getSourceRowsByCompanyRut(worksheet=previousWorksheet, headerRowNumber=previousHeaderRow, columnMap=previousColumnMap)
+        previousRowsByEmployee = self._buildRowsByEmployeeDocument(previousRows)
+
+        changeFields = [
+            {
+                "sourceColumn": "trabajo - tasa de retención (%)",
+                "fieldName": "% RETENCION",
+            },
+            {
+                "sourceColumn": "plan - fondo de pensiones",
+                "fieldName": "AFP",
+                "transform": self._mapPensionFund,
+            },
+            {
+                "sourceColumn": "colaborador - banco",
+                "fieldName": "BANCO",
+                "transform": self._mapBankCorporation,
+            },
+            {
+                "sourceColumn": "campos personalizados de colaborador - barrio",
+                "fieldName": "BARRIO",
+            },
+            {
+                "sourceColumn": "trabajo - sobreescribir caja",
+                "fieldName": "CAJA COMP",
+                "fixedValue": "CCF04",
+            },
+            {
+                "sourceColumn": "trabajo - cargo",
+                "fieldName": "CARGO",
+            },
+            {
+                "sourceColumn": "trabajo - nombre sub-area asignada(o)",
+                "fieldName": "CEN1",
+                "transform": lambda value: self._mapCostCenter1(self._mapCostCenter2(value)),
+            },
+            {
+                "sourceColumn": "trabajo - nombre sub-area asignada(o)",
+                "fieldName": "CEN2",
+                "transform": self._mapCostCenter2_1,
+            },
+            {
+                "sourceColumn": "trabajo - nombre sub-area asignada(o)",
+                "fieldName": "DESC CEN2",
+            },
+            {
+                "sourceColumn": "trabajo - nombre sub-area asignada(o)",
+                "fieldName": "CEN3",
+                "transform": self._mapCostCenter3,
+            },
+            {
+                "sourceColumn": "trabajo - nombre sub-area asignada(o)",
+                "fieldName": "DESC CEN3",
+            },
+            {
+                "sourceColumn": "campos personalizados de trabajo - dia de descanso 2 (t)",
+                "fieldName": "CEN4",
+                "transform": self._mapRestDayCode,
+            },
+            {
+                "sourceColumn": "campos personalizados de trabajo - dia de descanso 2 (t)",
+                "fieldName": "DESC CEN4",
+            },
+            {
+                "sourceColumn": "colaborador - municipio",
+                "fieldName": "CIUDAD RESID",
+                "transform": self._mapMunicipality,
+            },
+            {
+                "sourceColumn": "colaborador - email",
+                "fieldName": "CORREO ELECTRONICO",
+            },
+            {
+                "sourceColumn": "colaborador - numero de cuenta",
+                "fieldName": "CUENTA",
+            },
+            {
+                "sourceColumn": "colaborador - direccion",
+                "fieldName": "DIRECCION",
+            },
+            {
+                "sourceColumn": "colaborador - departamento",
+                "fieldName": "DPTO RESID",
+                "transform": self._mapDepartment,
+            },
+            {
+                "sourceColumn": "plan - eps",
+                "fieldName": "EPS",
+            },
+            {
+                "sourceColumn": "colaborador - estado civil",
+                "fieldName": "ESTADO CIVIL",
+                "transform": self._mapMaritalStatus,
+            },
+            {
+                "sourceColumn": "trabajo - fecha ingreso compania",
+                "fieldName": "FINGRESO",
+                "transform": self._formatDateAsText,
+            },
+            {
+                "sourceColumn": "colaborador - fecha de nacimiento",
+                "fieldName": "FNACIMIEN",
+                "transform": self._formatDateAsText,
+            },
+            {
+                "sourceColumn": "trabajo - fecha termino trabajo",
+                "fieldName": "FRETIRO",
+                "transform": self._formatDateAsText,
+            },
+            {
+                "sourceColumn": "campos personalizados de colaborador - lugar de nacimiento",
+                "fieldName": "LUGAR NACIM",
+                "transform": self._mapMunicipality,
+            },
+            {
+                "sourceColumn": "campos personalizados de colaborador - nivel academico",
+                "fieldName": "NIVEL EST.",
+                "transform": self._mapAcademicLevel,
+            },
+            {
+                "sourceColumn": "colaborador - sexo",
+                "fieldName": "SEXO",
+            },
+            {
+                "sourceColumn": "colaborador - telefono particular",
+                "fieldName": "TELEFONO",
+            },
+            {
+                "sourceColumn": "trabajo - tipo salario",
+                "fieldName": "TIPO CONTRATO",
+                "fixedValue": "fijo",
+            },
+        ]
+
+        currentRowNumber = 2
+        currentDateText = datetime.now().strftime("%d/%m/%Y")
+        currentEmployeeOccurrences = {}
+
+        for currentRow in currentRows:
+            employeeDocument = self._cleanDocument(self._getCellText(currentRow[self._normalize("colaborador - numero de documento")]))
+
+            if not employeeDocument:
+                continue
+
+            occurrenceIndex = currentEmployeeOccurrences.get(employeeDocument, 0)
+            currentEmployeeOccurrences[employeeDocument] = occurrenceIndex + 1
+            previousEmployeeRows = previousRowsByEmployee.get(employeeDocument, [])
+
+            if occurrenceIndex >= len(previousEmployeeRows):
+                continue
+
+            previousRow = previousEmployeeRows[occurrenceIndex]
+            employeeName = self._getCellText(currentRow[self._normalize("colaborador - nombre completo")]).upper()
+
+            for changeField in changeFields:
+                sourceColumn = self._normalize(changeField["sourceColumn"])
+                fieldName = changeField["fieldName"]
+                previousValue = self._getCellText(previousRow.get(sourceColumn))
+                currentValue = self._getCellText(currentRow.get(sourceColumn))
+
+                if self._normalize(previousValue) == self._normalize(currentValue):
+                    continue
+
+                fixedValue = changeField.get("fixedValue")
+                transform = changeField.get("transform")
+
+                if fixedValue is not None:
+                    newValue = fixedValue
+                elif transform:
+                    newValue = transform(currentValue)
+                else:
+                    newValue = currentValue
+
+                worksheet.cell(row=currentRowNumber, column=1, value=employeeDocument)
+                worksheet.cell(row=currentRowNumber, column=2, value=employeeName)
+                worksheet.cell(row=currentRowNumber, column=3, value=fieldName)
+                worksheet.cell(row=currentRowNumber, column=4, value=newValue)
+                worksheet.cell(row=currentRowNumber, column=5, value=currentDateText)
+
+                for columnNumber in range(1, 6):
+                    worksheet.cell(row=currentRowNumber, column=columnNumber).number_format = "@"
+
+                currentRowNumber += 1
+
+    def _clearMasterChangesSheet(self, worksheet) -> None:
+        startRow = 2
+
+        for rowNumber in range(startRow, worksheet.max_row + 1):
+            for columnNumber in range(1, 6):
+                worksheet.cell(row=rowNumber, column=columnNumber, value=None)
+
+    def _findColumnsByNames(self, worksheet, requiredColumns: set[str]):
+        for row in worksheet.iter_rows(min_row=1, max_row=10):
+            currentColumns = {}
+
+            for cell in row:
+                normalizedValue = self._normalize(cell.value)
+
+                if normalizedValue in requiredColumns:
+                    currentColumns[normalizedValue] = cell.column
+
+            if all(columnName in currentColumns for columnName in requiredColumns):
+                return row[0].row, currentColumns
+
+        missingColumnsText = ", ".join(sorted(requiredColumns))
+        raise ValueError(f"No se encontraron las columnas requeridas para Cambios de Maestro: {missingColumnsText}.")
+
+    def _getSourceRowsByCompanyRut(self, worksheet, headerRowNumber: int, columnMap: dict) -> list[dict[str, Any]]:
+        sourceRows = []
+
+        companyRutColumn = columnMap[self._normalize(self.COMPANY_RUT_COLUMN)]
+        expectedCompanyRut = self._cleanRut(self.COMPANY_RUT_VALUE)
+
+        for rowNumber in range(headerRowNumber + 1, worksheet.max_row + 1):
+            companyRutValue = worksheet.cell(row=rowNumber, column=companyRutColumn).value
+            currentCompanyRut = self._cleanRut(companyRutValue)
+
+            if currentCompanyRut != expectedCompanyRut:
+                continue
+
+            sourceRows.append(self._buildSourceRowContext(worksheet=worksheet, rowNumber=rowNumber, columnMap=columnMap,))
+
+        return sourceRows
+
+    def _buildRowsByEmployeeDocument(self, sourceRows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        rowsByEmployee = {}
+        documentColumn = self._normalize("colaborador - numero de documento")
+
+        for sourceRow in sourceRows:
+            employeeDocument = self._cleanDocument(self._getCellText(sourceRow.get(documentColumn)))
+
+            if not employeeDocument:
+                continue
+
+            if employeeDocument not in rowsByEmployee:
+                rowsByEmployee[employeeDocument] = []
+
+            rowsByEmployee[employeeDocument].append(sourceRow)
+
+        return rowsByEmployee
+
+    def _cleanDocument(self, value) -> str:
+        return "".join(character for character in str(value or "") if character.isdigit())
+
+    def _writeRetirementsSheet(self, templateWorkbook, currentContent: bytes, dateFrom: date, dateTo: date) -> None:
+        sheetName = "Retiros"
+
+        if sheetName not in templateWorkbook.sheetnames:
+            raise ValueError(f"No se encontró la hoja {sheetName} en la plantilla.")
+
+        worksheet = templateWorkbook[sheetName]
+        self._clearRetirementsSheet(worksheet)
+
+        currentWorkbook = load_workbook(BytesIO(currentContent), data_only=True, keep_links=False)
+        currentWorksheet = currentWorkbook.active
+
+        requiredColumns = {
+            self._normalize(self.COMPANY_RUT_COLUMN),
+            self._normalize("colaborador - numero de documento"),
+            self._normalize("colaborador - nombre completo"),
+            self._normalize("trabajo - fecha termino trabajo"),
+            self._normalize("trabajo - razon de termino"),
+        }
+
+        headerRow, columnMap = self._findColumnsByNames(worksheet=currentWorksheet, requiredColumns=requiredColumns)
+        sourceRows = self._getSourceRowsByCompanyRut(worksheet=currentWorksheet, headerRowNumber=headerRow, columnMap=columnMap)
+
+        documentColumn = self._normalize("colaborador - numero de documento")
+        nameColumn = self._normalize("colaborador - nombre completo")
+        retirementDateColumn = self._normalize("trabajo - fecha termino trabajo")
+        reasonColumn = self._normalize("trabajo - razon de termino")
+
+        currentRowNumber = 3
+
+        for sourceRow in sourceRows:
+            retirementDateCell = sourceRow.get(retirementDateColumn)
+
+            retirementDateValue = (
+                retirementDateCell.value
+                if hasattr(retirementDateCell, "value")
+                else retirementDateCell
+            )
+
+            retirementDate = self._parseDate(retirementDateValue)
+
+            if not retirementDate:
+                continue
+
+            if retirementDate < dateFrom or retirementDate > dateTo:
+                continue
+
+            employeeDocument = self._cleanDocument(self._getCellText(sourceRow.get(documentColumn)))
+            employeeName = self._getCellText(sourceRow.get(nameColumn)).upper()
+            retirementDateText = self._formatDateAsText(sourceRow.get(retirementDateColumn))
+            reason = self._getCellText(sourceRow.get(reasonColumn))
+
+            worksheet.cell(row=currentRowNumber, column=1, value=employeeDocument)
+            worksheet.cell(row=currentRowNumber, column=2, value=employeeName)
+            worksheet.cell(row=currentRowNumber, column=3, value=retirementDateText)
+            worksheet.cell(row=currentRowNumber, column=4, value=reason)
+
+            for columnNumber in range(1, 5):
+                worksheet.cell(row=currentRowNumber, column=columnNumber).number_format = "@"
+
+            currentRowNumber += 1
+
+    def _clearRetirementsSheet(self, worksheet) -> None:
+        startRow = 3
+
+        for rowNumber in range(startRow, worksheet.max_row + 1):
+            for columnNumber in range(1, 5):
+                worksheet.cell(row=rowNumber, column=columnNumber).value = None
+
+
+    def _writeSalaryChangesSheet(self, templateWorkbook, currentContent: bytes, previousContent: bytes | None) -> None:
+        sheetName = "Modificaciones de Salario"
+
+        if sheetName not in templateWorkbook.sheetnames:
+            raise ValueError(f"No se encontró la hoja {sheetName} en la plantilla.")
+
+        worksheet = templateWorkbook[sheetName]
+        self._clearSalaryChangesSheet(worksheet)
+
+        if not previousContent:
+            return
+
+        currentWorkbook = load_workbook(BytesIO(currentContent), data_only=True, keep_links=False)
+        previousWorkbook = load_workbook(BytesIO(previousContent), data_only=True, keep_links=False)
+        currentWorksheet = currentWorkbook.active
+        previousWorksheet = previousWorkbook.active
+
+        requiredColumns = {
+            self._normalize(self.COMPANY_RUT_COLUMN),
+            self._normalize("colaborador - numero de documento"),
+            self._normalize("colaborador - nombre completo"),
+            self._normalize("trabajo - fecha ingreso compania"),
+            self._normalize("campos personalizados de trabajo - salario (obligatorio)"),
+        }
+
+        currentHeaderRow, currentColumnMap = self._findColumnsByNames(worksheet=currentWorksheet, requiredColumns=requiredColumns)
+        previousHeaderRow, previousColumnMap = self._findColumnsByNames(worksheet=previousWorksheet, requiredColumns=requiredColumns)
+        currentRows = self._getSourceRowsByCompanyRut(worksheet=currentWorksheet, headerRowNumber=currentHeaderRow, columnMap=currentColumnMap)
+        previousRows = self._getSourceRowsByCompanyRut(worksheet=previousWorksheet, headerRowNumber=previousHeaderRow, columnMap=previousColumnMap)
+
+        previousRowsByEmployee = self._buildRowsByEmployeeDocument(previousRows)
+
+        documentColumn = self._normalize("colaborador - numero de documento")
+        nameColumn = self._normalize("colaborador - nombre completo")
+        incomeDateColumn = self._normalize("trabajo - fecha ingreso compania")
+        salaryColumn = self._normalize("campos personalizados de trabajo - salario (obligatorio)")
+
+        currentRowNumber = 2
+        currentDateText = datetime.now().strftime("%d/%m/%Y")
+        currentEmployeeOccurrences = {}
+
+        for currentRow in currentRows:
+            employeeDocument = self._cleanDocument(self._getCellText(currentRow.get(documentColumn)))
+
+            if not employeeDocument:
+                continue
+
+            occurrenceIndex = currentEmployeeOccurrences.get(employeeDocument, 0)
+            currentEmployeeOccurrences[employeeDocument] = occurrenceIndex + 1
+            previousEmployeeRows = previousRowsByEmployee.get(employeeDocument, [])
+
+            if occurrenceIndex >= len(previousEmployeeRows):
+                continue
+
+            previousRow = previousEmployeeRows[occurrenceIndex]
+            previousSalary = self._getCellText(previousRow.get(salaryColumn))
+            currentSalary = self._getCellText(currentRow.get(salaryColumn))
+
+            if self._normalizeSalaryForCompare(previousSalary) == self._normalizeSalaryForCompare(currentSalary):
+                continue
+
+            employeeName = self._getCellText(currentRow.get(nameColumn)).upper()
+            incomeDateText = self._formatDateAsText(currentRow.get(incomeDateColumn))
+
+            worksheet.cell(row=currentRowNumber, column=1, value=employeeDocument)
+            worksheet.cell(row=currentRowNumber, column=2, value=employeeName)
+            worksheet.cell(row=currentRowNumber, column=3, value=incomeDateText)
+            worksheet.cell(row=currentRowNumber, column=4, value=currentDateText)
+            worksheet.cell(row=currentRowNumber, column=5, value=previousSalary)
+            worksheet.cell(row=currentRowNumber, column=6, value=currentSalary)
+
+            for columnNumber in range(1, 7):
+                worksheet.cell(row=currentRowNumber, column=columnNumber).number_format = "@"
+
+            currentRowNumber += 1
+    def _clearSalaryChangesSheet(self, worksheet) -> None:
+        startRow = 2
+
+        for rowNumber in range(startRow, worksheet.max_row + 1):
+            for columnNumber in range(1, 10):
+                worksheet.cell(row=rowNumber, column=columnNumber).value = None
+    
+    def _normalizeSalaryForCompare(self, value) -> str:
+        text = self._getCellText(value)
+
+        if not text:
+            return ""
+
+        text = text.strip()
+        text = text.replace("$", "")
+        text = text.replace(" ", "")
+        text = text.replace(".", "")
+        text = text.replace(",", ".")
+
+        try:
+            numberValue = float(text)
+
+            if numberValue.is_integer():
+                return str(int(numberValue))
+
+            return str(numberValue)
+        except ValueError:
+            return self._normalize(text)

@@ -2,6 +2,7 @@ from app.infrastructure.storage.GeneratedFileStorage import GeneratedFileStorage
 from app.application.interfaces.IFileApplication import IFileApplication
 from app.domain.dtos.OnlyOfficeDto import OnlyOfficeConfigDto
 from app.infrastructure.excel.ExcelReader import ExcelReader
+from app.infrastructure.storage.Master import Master
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import jwt
@@ -12,6 +13,7 @@ class FileApplication(IFileApplication):
     def __init__(self, excelReader: ExcelReader, storage: GeneratedFileStorage):
         self.excelReader = excelReader
         self.storage = storage
+        self.master = Master()
 
     def generate(self, fileName: str, content: bytes, dateFrom: date, dateTo: date,) -> OnlyOfficeConfigDto:
 
@@ -29,9 +31,13 @@ class FileApplication(IFileApplication):
         
         self._cleanupOldGeneratedExcels()
 
-        generatedFile = self.excelReader.generateTemplate(fileName=fileName, content=content, dateFrom=dateFrom, dateTo=dateTo,)
+        previousMaster = self.master.readLatest()
+
+        generatedFile = self.excelReader.generateTemplate(fileName=fileName, content=content, dateFrom=dateFrom, dateTo=dateTo, previousMaster=previousMaster)
 
         fileId, _ = self.storage.save(generatedFile.content)
+
+        self.master.saveLatest(content)
 
         integrationPublicUrl = os.getenv("INTEGRATION_PUBLIC_URL", "http://host.docker.internal:8002")
         onlyofficePublicUrl = os.getenv("ONLYOFFICE_PUBLIC_URL", "http://127.0.0.1:8085")
