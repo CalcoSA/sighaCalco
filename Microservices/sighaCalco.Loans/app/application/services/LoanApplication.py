@@ -220,6 +220,7 @@ class LoanApplication(ILoanApplication):
             if not loanStatusFound:
                 raise ValueError("El estado seleccionado no existe.")
 
+            previousStatusId = loanFound.IdLoanStatus
             previousStatusName = loanFound.loanStatusName
             newStatusName = loanStatusFound.nameLoanStatus
             nowColombia = self._nowColombia()
@@ -232,6 +233,11 @@ class LoanApplication(ILoanApplication):
                 updatedAt=nowColombia,
             )
 
+            wasReactivated = (previousStatusId == 3 and loanData.IdLoanStatus == 1)
+
+            if wasReactivated:
+                self._recalculatePendingInstallmentDates(loan=updatedLoan, reactivationDate=nowColombia.date())
+
             self.loanStatusHistoryRepository.create(
                 LoanStatusHistory(
                     IdLoan=updatedLoan.IdLoan,
@@ -240,6 +246,12 @@ class LoanApplication(ILoanApplication):
                     createdAt=nowColombia,
                     createdByUserName=updatedByUserName,
                 )
+            )
+
+            recalculationMessage = (
+                " Se recalcularon las fechas de las cuotas pendientes."
+                if wasReactivated
+                else ""
             )
 
             self.loanLogRepository.add(
@@ -255,7 +267,8 @@ class LoanApplication(ILoanApplication):
                     observation=(
                         f"El estado del préstamo cambió de "
                         f"{previousStatusName} a "
-                        f"{newStatusName}. "
+                        f"{newStatusName}."
+                        f"{recalculationMessage} "
                         f"Observación: {observation}"
                     ),
                     actorUserName=updatedByUserName,
@@ -332,6 +345,30 @@ class LoanApplication(ILoanApplication):
         targetInstallmentDate = date(currentDate.year, currentDate.month, lastDayOfMonth,)
 
         return ("Segunda quincena", targetInstallmentDate, { "segunda quincena", "ambas quincenas", },)
+    
+    def _recalculatePendingInstallmentDates(self, loan: Loan, reactivationDate: date) -> None:
+
+        pendingInstallments = sorted(
+            [
+                installment
+                for installment in loan.loanInstallments
+                if not installment.isPaid
+            ],
+            key=lambda installment: installment.installmentNumber,
+        )
+
+        if not pendingInstallments:
+            return
+
+        deductionPlanName = loan.deductionPlanName.strip().lower()
+
+        newCommitmentDates = self._calculateCommitmentDates(startDate=reactivationDate, numberInstallments=len(pendingInstallments), deductionPlanName=deductionPlanName)
+
+        for installment, commitmentDate in zip(pendingInstallments, newCommitmentDates):
+            installment.commitmentDate = commitmentDate
+            installment.paymentDate = None
+
+        loan.endDiscountDate = newCommitmentDates[-1]
 
     def _processScheduledLoan(self, loan: Loan, targetInstallmentDate: date, allowedPlans: set[str], actorUserName: str, result: LoanScheduledDto,) -> bool:
 
@@ -367,16 +404,15 @@ class LoanApplication(ILoanApplication):
         wasModified = False
 
         if loan.IdLoanStatus == 2:
+            nowColombia = self._nowColombia()
             loan.IdLoanStatus = 1
             loan.loanStatusName = "Activo"
             loan.updatedByUserName = actorUserName
-            loan.updatedAt = self._nowColombia()
-            self._addScheduledLoanLog(
-                loan=loan,
-                actionType="Activación automática",
-                observation=("El préstamo cambió de Inactivo a Activo porque llegó la quincena correspondiente para iniciar el descuento."),
-                actorUserName=actorUserName,
-            )
+            loan.updatedAt = nowColombia
+            activationObservation = ("El préstamo cambió de Inactivo a Activo porque llegó la quincena correspondiente para iniciar el descuento.")
+
+            self._addScheduledLoanStatusHistory(loan=loan, observation=activationObservation, actorUserName=actorUserName, createdAt=nowColombia)
+            self._addScheduledLoanLog(loan=loan, actionType="Activación automática", observation=activationObservation, actorUserName=actorUserName)
 
             result.activatedLoans += 1
             wasModified = True
@@ -434,18 +470,16 @@ class LoanApplication(ILoanApplication):
         ]
 
         if not remainingPendingInstallments:
+            nowColombia = self._nowColombia()
             loan.IdLoanStatus = 4
             loan.loanStatusName = "Terminado"
             loan.endDiscountDate = targetInstallmentDate
             loan.updatedByUserName = actorUserName
-            loan.updatedAt = self._nowColombia()
+            loan.updatedAt = nowColombia
+            finishedObservation = ("El préstamo cambió a Terminado porque todas sus cuotas se encuentran pagadas.")
 
-            self._addScheduledLoanLog(
-                loan=loan,
-                actionType="Terminación automática",
-                observation=("El préstamo cambió a Terminado porque todas sus cuotas se encuentran pagadas."),
-                actorUserName=actorUserName,
-            )
+            self._addScheduledLoanStatusHistory(loan=loan, observation=finishedObservation, actorUserName=actorUserName, createdAt=nowColombia)
+            self._addScheduledLoanLog(loan=loan, actionType="Terminación automática", observation=finishedObservation, actorUserName=actorUserName)
 
             result.finishedLoans += 1
 
@@ -490,3 +524,65 @@ class LoanApplication(ILoanApplication):
                 actorUserName=actorUserName,
             )
         )
+
+    def _addScheduledLoanStatusHistory(self, loan: Loan, observation: str, actorUserName: str, createdAt: datetime) -> None:
+        self.loanStatusHistoryRepository.create(
+            LoanStatusHistory(
+                IdLoan=loan.IdLoan,
+                IdLoanStatus=loan.IdLoanStatus,
+                observation=observation,
+                createdAt=createdAt,
+                createdByUserName=actorUserName,
+            )
+        )
+    
+    def _calculateCommitmentDates(self, startDate: date, numberInstallments: int, deductionPlanName: str) -> list[date]:
+        dates: list[date] = []
+
+        if deductionPlanName == "primera quincena":
+            firstMonthOffset = 0 if startDate.day <= 15 else 1
+
+            for index in range(numberInstallments):
+                monthIndex = (startDate.month - 1 + firstMonthOffset + index)
+                year = startDate.year + (monthIndex // 12)
+                month = (monthIndex % 12) + 1
+                dates.append(date(year, month, 15))
+
+            return dates
+
+        if deductionPlanName == "segunda quincena":
+
+            for index in range(numberInstallments):
+                monthIndex = (startDate.month - 1 + index)
+                year = startDate.year + (monthIndex // 12)
+                month = (monthIndex % 12) + 1
+                lastDay = monthrange(year, month)[1]
+                dates.append(date(year, month, lastDay))
+
+            return dates
+
+        if deductionPlanName == "ambas quincenas":
+            currentYear = startDate.year
+            currentMonth = startDate.month
+            isFirstFortnight = startDate.day <= 15
+
+            for _ in range(numberInstallments):
+
+                if isFirstFortnight:
+                    dates.append(date(currentYear, currentMonth, 15))
+
+                    isFirstFortnight = False
+
+                else:
+                    lastDay = monthrange(currentYear, currentMonth)[1]
+                    dates.append(date(currentYear, currentMonth, lastDay))
+                    isFirstFortnight = True
+                    currentMonth += 1
+
+                    if currentMonth > 12:
+                        currentMonth = 1
+                        currentYear += 1
+
+            return dates
+
+        raise ValueError("El plan de deducción del préstamo no es válido.")
