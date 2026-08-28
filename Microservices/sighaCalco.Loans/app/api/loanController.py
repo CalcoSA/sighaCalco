@@ -1,7 +1,9 @@
+from app.infrastructure.repositories.ServiceDiscountHistoryRepository import ServiceDiscountHistoryRepository
 from app.infrastructure.repositories.LoanStatusHistoryRepository import LoanStatusHistoryRepository
 from app.infrastructure.repositories.LoanStatusRepository import LoanStatusRepository
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.infrastructure.repositories.LoanLogRepository import LoanLogRepository
+from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.infrastructure.repositories.LoanRepository import LoanRepository
 from app.application.interfaces.ILoanApplication import ILoanApplication
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,12 +25,14 @@ def getLoanApplication(db: Session = Depends(getDb)) -> ILoanApplication:
     loanLogRepository = LoanLogRepository(db)
     loanStatusHistoryRepository = LoanStatusHistoryRepository(db)
     loanStatusRepository = LoanStatusRepository(db)
+    serviceDiscountHistoryRepository = ServiceDiscountHistoryRepository(db)
 
     return LoanApplication(
         loanRepository=loanRepository,
         loanLogRepository=loanLogRepository,
         loanStatusHistoryRepository=loanStatusHistoryRepository,
         loanStatusRepository=loanStatusRepository,
+        serviceDiscountHistoryRepository=serviceDiscountHistoryRepository
     )
 
 @router.get("/", response_model=apiResponse)
@@ -128,6 +132,30 @@ def updateLoanStatus(IdLoan: int, loanData: LoanUpdateDto, service: ILoanApplica
     except Exception:
         logger.exception("Error inesperado actualizando estado | IdLoan=%s | IdLoanStatus=%s", IdLoan, loanData.IdLoanStatus)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al actualizar el estado del préstamo.")
+
+@router.put("/{IdLoan}/service-value", response_model=apiResponse[LoanDto])
+def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service: ILoanApplication = Depends(getLoanApplication)):
+    try:
+        logger.info("Actualizando valor del servicio | IdLoan=%s | serviceValue=%s", IdLoan, serviceData.serviceValue)
+        data = (service.updateServiceValue(IdLoan=IdLoan, serviceData=serviceData))
+        return apiResponse(isSuccess=True, Message="Valor del servicio actualizado correctamente.", result=data)
+
+    except ValueError as exception:
+        message = str(exception)
+
+        statusCode = (
+            status.HTTP_404_NOT_FOUND
+            if "no encontrado"
+            in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+
+        raise HTTPException(status_code=statusCode, detail=message)
+
+    except Exception:
+        logger.exception("Error actualizando valor | IdLoan=%s", IdLoan)
+
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al actualizar el valor del servicio."))
     
 """
 @router.put("/{IdLoan}", response_model=apiResponseDto[LoanResponseDto])
