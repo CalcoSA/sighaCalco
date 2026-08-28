@@ -1,3 +1,4 @@
+from app.infrastructure.repositories.ServiceDiscountHistoryRepository import ServiceDiscountHistoryRepository
 from app.infrastructure.repositories.LoanStatusHistoryRepository import LoanStatusHistoryRepository
 from app.infrastructure.repositories.LoanStatusRepository import LoanStatusRepository
 from app.infrastructure.repositories.LoanLogRepository import LoanLogRepository
@@ -22,12 +23,14 @@ def executeLoanScheduled() -> None:
         loanLogRepository = LoanLogRepository(db)
         loanStatusHistoryRepository = LoanStatusHistoryRepository(db)
         loanStatusRepository = LoanStatusRepository(db)
+        serviceDiscountHistoryRepository = ServiceDiscountHistoryRepository(db)
 
         service = LoanApplication(
             loanRepository=loanRepository,
             loanLogRepository=loanLogRepository,
             loanStatusHistoryRepository=loanStatusHistoryRepository,
             loanStatusRepository=loanStatusRepository,
+            serviceDiscountHistoryRepository=serviceDiscountHistoryRepository
         )
         
         result = service.processScheduledLoans(actorUserName="TAREA_PROGRAMADA")

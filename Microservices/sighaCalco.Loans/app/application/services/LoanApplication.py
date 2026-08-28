@@ -1,5 +1,8 @@
+from app.domain.interfaces.IServiceDiscountHistoryRepository import IServiceDiscountHistoryRepository
 from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
+from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
+from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.application.interfaces.ILoanApplication import ILoanApplication
 from app.domain.interfaces.ILoanLogRepository import ILoanLogRepository
@@ -19,11 +22,12 @@ from typing import Optional
 
 class LoanApplication(ILoanApplication):
 
-    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository, loanStatusHistoryRepository: ILoanStatusHistoryRepository, loanStatusRepository: ILoanStatusRepository):
+    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository, loanStatusHistoryRepository: ILoanStatusHistoryRepository, loanStatusRepository: ILoanStatusRepository, serviceDiscountHistoryRepository: IServiceDiscountHistoryRepository):
         self.loanRepository = loanRepository
         self.loanLogRepository = loanLogRepository
         self.loanStatusHistoryRepository = loanStatusHistoryRepository
         self.loanStatusRepository = loanStatusRepository
+        self.serviceDiscountHistoryRepository = serviceDiscountHistoryRepository
 
     def _nowColombia(self) -> datetime:
         return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
@@ -43,6 +47,7 @@ class LoanApplication(ILoanApplication):
             employeeFullName=loanData.employeeFullName.strip(),
             employeeRoleName=self._normalizeText(loanData.employeeRoleName),
             employeeCostCenterName=self._normalizeText(loanData.employeeCostCenterName),
+            isLoan=loanData.isLoan,
             crossDocument=self._normalizeText(loanData.crossDocument),
             IdConcept=loanData.IdConcept,
             conceptName=loanData.conceptName.strip(),
@@ -50,28 +55,48 @@ class LoanApplication(ILoanApplication):
             deductionPlanName=loanData.deductionPlanName.strip(),
             IdLoanStatus=loanData.IdLoanStatus,
             loanStatusName=loanData.loanStatusName.strip(),
-            loanAmount=loanData.loanAmount,
-            numberInstallments=loanData.numberInstallments,
-            paidInstallments=0,
-            remainingAmount=loanData.loanAmount,
+            loanAmount=(loanData.loanAmount
+                if loanData.isLoan
+                else None
+            ),
+            numberInstallments=(loanData.numberInstallments
+                if loanData.isLoan
+                else None
+            ),
+            paidInstallments=(0
+                if loanData.isLoan
+                else None
+            ),
+            remainingAmount=(loanData.loanAmount
+                if loanData.isLoan
+                else None
+            ),
             requestDate=loanData.requestDate,
             startDiscountDate=loanData.startDiscountDate,
-            endDiscountDate=loanData.endDiscountDate,
+            endDiscountDate=(loanData.endDiscountDate
+                if loanData.isLoan
+                else None
+            ),
             observation=self._normalizeText(loanData.observation),
             createdByUserName=loanData.createdByUserName.strip(),
             updatedByUserName=None,
         )
 
-        loan.loanInstallments = [
-            LoanInstallment(
-                installmentNumber=item.installmentNumber,
-                installmentValue=item.installmentValue,
-                isPaid=item.isPaid,
-                commitmentDate=item.commitmentDate,
-                paymentDate=item.paymentDate,
-            )
-            for item in loanData.loanInstallments
-        ]
+        if loanData.isLoan:
+            loan.loanInstallments = [
+                LoanInstallment(
+                    installmentNumber=(item.installmentNumber),
+                    installmentValue=(item.installmentValue),
+                    isPaid=item.isPaid,
+                    commitmentDate=(item.commitmentDate),
+                    paymentDate=item.paymentDate,
+                )
+                for item
+                in loanData.loanInstallments
+            ]
+
+        else:
+            loan.loanInstallments = []
 
         createdLoan = self.loanRepository.create(loan)
         self._createLoanStatusHistory(createdLoan)
@@ -101,18 +126,34 @@ class LoanApplication(ILoanApplication):
             raise ValueError("El nombre del plan de deducción es obligatorio.")
 
         if loanData.IdLoanStatus <= 0:
-            raise ValueError("El estado del préstamo es obligatorio.")
+            raise ValueError("El estado es obligatorio.")
 
         if not loanData.loanStatusName.strip():
-            raise ValueError("El nombre del estado del préstamo es obligatorio.")
+            raise ValueError("El nombre del estado es obligatorio.")
 
-        if loanData.loanAmount <= Decimal("0"):
+        if (loanData.startDiscountDate < loanData.requestDate):
+            raise ValueError("La fecha de inicio del descuento no puede ser menor a la fecha de solicitud.")
+
+        if not loanData.createdByUserName.strip():
+            raise ValueError("El usuario que crea el registro es obligatorio.")
+
+        if loanData.isLoan:
+            self._validateLoanCreate(loanData)
+        else:
+            self._validateServiceCreate(loanData)
+
+    def _validateLoanCreate(self, loanData: LoanCreateDto) -> None:
+
+        if (loanData.loanAmount is None or loanData.loanAmount <= Decimal("0")):
             raise ValueError("El valor del préstamo debe ser mayor a cero.")
-        
+
+        if (loanData.numberInstallments is None or loanData.numberInstallments <= 0):
+            raise ValueError("El número de cuotas debe ser mayor a cero.")
+
         if not loanData.loanInstallments:
             raise ValueError("Debe ingresar al menos una cuota.")
-        
-        if len(loanData.loanInstallments) != loanData.numberInstallments:
+
+        if (len(loanData.loanInstallments) != loanData.numberInstallments):
             raise ValueError("La cantidad de cuotas ingresadas debe ser igual al número de cuotas del préstamo.")
 
         totalInstallments = Decimal("0")
@@ -124,23 +165,34 @@ class LoanApplication(ILoanApplication):
 
             if item.installmentValue <= Decimal("0"):
                 raise ValueError("El valor de cada cuota debe ser mayor a cero.")
-            
+
             if not item.commitmentDate:
                 raise ValueError("La fecha compromiso de cada cuota es obligatoria.")
-            
-            totalInstallments += item.installmentValue
 
-        if totalInstallments.quantize(Decimal("0.01")) != loanData.loanAmount.quantize(Decimal("0.01")):
+            totalInstallments += (item.installmentValue)
+
+        if (totalInstallments.quantize(Decimal("0.01")) != loanData.loanAmount.quantize(Decimal("0.01"))):
             raise ValueError("La suma del valor de las cuotas debe ser igual al valor del préstamo.")
 
-        if loanData.startDiscountDate < loanData.requestDate:
-            raise ValueError("La fecha de inicio del descuento no puede ser menor a la fecha de solicitud.")
+        if (loanData.endDiscountDate and loanData.endDiscountDate < loanData.startDiscountDate):
+            raise ValueError("La fecha final del descuento no puede ser menor a la fecha inicial.")
 
-        if loanData.endDiscountDate and loanData.endDiscountDate < loanData.startDiscountDate:
-            raise ValueError("La fecha final del descuento no puede ser menor a la fecha inicial del descuento.")
+    def _validateServiceCreate(self, loanData: LoanCreateDto) -> None:
 
-        if not loanData.createdByUserName.strip():
-            raise ValueError("El usuario que crea el préstamo es obligatorio.")
+        if (loanData.serviceValue is None or loanData.serviceValue <= Decimal("0")):
+            raise ValueError("El valor del servicio debe ser mayor a cero.")
+
+        if loanData.loanAmount is not None:
+            raise ValueError("Un servicio no debe tener valor de préstamo.")
+
+        if loanData.numberInstallments is not None:
+            raise ValueError("Un servicio no debe tener número de cuotas.")
+
+        if loanData.loanInstallments:
+            raise ValueError("Un servicio no debe tener cuotas.")
+
+        if loanData.endDiscountDate is not None:
+            raise ValueError("Un servicio no debe tener fecha final de descuento.")
 
     def _normalizeText(self, value: str | None) -> str | None:
         if value is None:
@@ -165,6 +217,9 @@ class LoanApplication(ILoanApplication):
                 actorUserName=loan.createdByUserName,
             )
         )
+
+        if not loan.isLoan:
+            return
 
         for installment in loan.loanInstallments:
             self.loanLogRepository.create(
@@ -233,7 +288,7 @@ class LoanApplication(ILoanApplication):
                 updatedAt=nowColombia,
             )
 
-            wasReactivated = (previousStatusId == 3 and loanData.IdLoanStatus == 1)
+            wasReactivated = (loanFound.isLoan and previousStatusId == 3 and loanData.IdLoanStatus == 1)
 
             if wasReactivated:
                 self._recalculatePendingInstallmentDates(loan=updatedLoan, reactivationDate=nowColombia.date())
@@ -297,29 +352,120 @@ class LoanApplication(ILoanApplication):
 
             raise Exception("Error al actualizar el estado del " f"préstamo: {str(exception)}") from exception
 
+    def updateServiceValue(self, IdLoan: int, serviceData: ServiceValueUpdateDto) -> LoanDto:
+        updatedByUserName = serviceData.updatedByUserName.strip()
+
+        if not updatedByUserName:
+            raise ValueError("El usuario que modifica el servicio es obligatorio.")
+
+        try:
+            loanFound = self.loanRepository.getByIdForUpdate(IdLoan)
+
+            if not loanFound:
+                raise ValueError("Registro no encontrado.")
+
+            if loanFound.isLoan:
+                raise ValueError("El registro seleccionado es un préstamo y no un servicio.")
+
+            previousValue = loanFound.serviceValue
+            nowColombia = self._nowColombia()
+
+            updatedLoan = (
+                self.loanRepository
+                .updateServiceValue(
+                    loanData=loanFound,
+                    serviceValue=serviceData.serviceValue,
+                    updatedByUserName=updatedByUserName,
+                    updatedAt=nowColombia,
+                )
+            )
+
+            self.loanLogRepository.add(
+                LoanLog(
+                    actionType="Actualización valor servicio",
+                    IdLoan=updatedLoan.IdLoan,
+                    IdLoanInstallment=None,
+                    installmentNumber=None,
+                    employeeDocumentNumber=updatedLoan.employeeDocumentNumber,
+                    conceptName=updatedLoan.conceptName,
+                    loanStatusName=updatedLoan.loanStatusName,
+                    installmentStatusName=None,
+                    observation=(
+                        "El valor del servicio "
+                        f"cambió de {previousValue} "
+                        "a " f"{serviceData.serviceValue}."
+                    ),
+                    actorUserName=updatedByUserName,
+                )
+            )
+
+            self.loanRepository.commit()
+
+            refreshedLoan = self.loanRepository.getById(IdLoan)
+
+            if not refreshedLoan:
+                raise Exception("No fue posible recuperar el registro actualizado.")
+
+            return LoanDto.model_validate(refreshedLoan)
+
+        except ValueError:
+            self.loanRepository.rollback()
+            raise
+
+        except Exception as exception:
+            self.loanRepository.rollback()
+
+            raise Exception("Error al actualizar el valor " f"del servicio: {str(exception)}") from exception
+
+    def _processScheduledItem(self, loan: Loan, targetInstallmentDate: date, allowedPlans: set[str], actorUserName: str, result: LoanScheduledDto) -> bool:
+
+        if loan.isLoan:
+            return self._processScheduledLoan(
+                loan=loan,
+                targetInstallmentDate=(targetInstallmentDate),
+                allowedPlans=allowedPlans,
+                actorUserName=(actorUserName),
+                result=result,
+            )
+
+        return self._processScheduledService(
+            loan=loan,
+            targetDiscountDate=(targetInstallmentDate),
+            allowedPlans=allowedPlans,
+            actorUserName=actorUserName,
+            result=result,
+        )
+
     def processScheduledLoans(self, actorUserName: str) -> LoanScheduledDto:
         currentDate = datetime.now(ZoneInfo("America/Bogota")).date()
         (cycleName, targetInstallmentDate, allowedPlans) = self.getCurrentScheduledCycle(currentDate)
         result = LoanScheduledDto(executionDate=currentDate, cycleName=cycleName, targetInstallmentDate=targetInstallmentDate)
         loanIds = self.loanRepository.getScheduledLoanIds()
-        result.reviewedLoans = len(loanIds)
         self.loanRepository.rollback()
 
         for IdLoan in loanIds:
+            loan = None
+
             try:
                 loan = self.loanRepository.getByIdForScheduled(IdLoan)
 
                 if not loan:
-                    result.skippedLoans += 1
                     self.loanRepository.rollback()
                     continue
 
-                wasModified = self._processScheduledLoan(
-                    loan=loan,
-                    targetInstallmentDate=targetInstallmentDate,
-                    allowedPlans=allowedPlans,
-                    actorUserName=actorUserName,
-                    result=result,
+                if loan.isLoan:
+                    result.reviewedLoans += 1
+                else:
+                    result.reviewedServices += 1
+
+                wasModified = (
+                    self._processScheduledItem(
+                        loan=loan,
+                        targetInstallmentDate=targetInstallmentDate,
+                        allowedPlans=allowedPlans,
+                        actorUserName=actorUserName,
+                        result=result,
+                    )
                 )
 
                 if wasModified:
@@ -328,9 +474,15 @@ class LoanApplication(ILoanApplication):
                     self.loanRepository.rollback()
 
             except Exception as exception:
+
                 self.loanRepository.rollback()
-                result.failedLoans += 1
-                result.errors.append(f"Préstamo {IdLoan}: {str(exception)}")
+
+                if (loan is not None and not loan.isLoan):
+                    result.failedServices += 1
+                else:
+                    result.failedLoans += 1
+
+                result.errors.append(f"Registro {IdLoan}: " f"{str(exception)}")
 
         return result
 
@@ -482,6 +634,93 @@ class LoanApplication(ILoanApplication):
             self._addScheduledLoanLog(loan=loan, actionType="Terminación automática", observation=finishedObservation, actorUserName=actorUserName)
 
             result.finishedLoans += 1
+
+        return True
+
+    def _processScheduledService(self, loan: Loan, targetDiscountDate: date, allowedPlans: set[str], actorUserName: str, result: LoanScheduledDto) -> bool:
+
+        if loan.IdLoanStatus not in [1, 2]:
+            result.skippedServices += 1
+            return False
+
+        deductionPlanName = loan.deductionPlanName.strip().lower()
+
+        if deductionPlanName not in allowedPlans:
+            result.skippedServices += 1
+            return False
+
+        if (loan.startDiscountDate > targetDiscountDate):
+            result.skippedServices += 1
+            return False
+
+        if (loan.serviceValue is None or loan.serviceValue <= Decimal("0")):
+            raise ValueError("El servicio no tiene un valor válido para descontar.")
+
+        wasModified = False
+
+        if loan.IdLoanStatus == 2:
+
+            nowColombia = self._nowColombia()
+
+            loan.IdLoanStatus = 1
+            loan.loanStatusName = "Activo"
+            loan.updatedByUserName = actorUserName
+            loan.updatedAt = nowColombia
+            activationObservation = ("El servicio cambió de Inactivo a Activo porque llegó la fecha correspondiente para iniciar el descuento.")
+
+            self._addScheduledLoanStatusHistory(
+                loan=loan,
+                observation=activationObservation,
+                actorUserName=actorUserName,
+                createdAt=nowColombia,
+            )
+
+            self._addScheduledLoanLog(
+                loan=loan,
+                actionType="Activación automática",
+                observation=activationObservation,
+                actorUserName=actorUserName,
+            )
+
+            result.activatedServices += 1
+            wasModified = True
+
+        alreadyProcessed = self.serviceDiscountHistoryRepository.exists(IdLoan=loan.IdLoan, discountDate=(targetDiscountDate))
+
+        if alreadyProcessed:
+            result.skippedServices += 1
+            return wasModified
+
+        nowColombia = self._nowColombia()
+
+        self.serviceDiscountHistoryRepository.create(
+            ServiceDiscountHistory(
+                IdLoan=loan.IdLoan,
+                discountValue=loan.serviceValue,
+                discountDate=targetDiscountDate,
+                createdAt=nowColombia,
+                createdByUserName=actorUserName,
+            )
+        )
+
+        loan.updatedByUserName = actorUserName
+        loan.updatedAt = nowColombia
+
+        self._addScheduledLoanLog(
+            loan=loan,
+            actionType="Descuento automático de servicio",
+            observation=(
+                "Se registró el descuento "
+                "del servicio por valor "
+                f"{loan.serviceValue}, "
+                "correspondiente a la fecha "
+                f"{targetDiscountDate}."
+            ),
+            actorUserName=actorUserName,
+        )
+
+        result.serviceDiscounts += 1
+        result.processedLoanIds.append(loan.IdLoan)
 
         return True
 

@@ -1,3 +1,4 @@
+from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.entities.loanInstallment import LoanInstallment
 from app.domain.entities.typeBankAccount import TypeBankAccount
 from app.domain.entities.payrollSinergy import PayrollSinergy

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Date, DateTime, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.db.connection import Base
 from typing import TYPE_CHECKING, List
@@ -18,6 +18,7 @@ class Loan(Base):
     employeeFullName: Mapped[str] = mapped_column("employeeFullName", String(250), nullable=False)
     employeeRoleName: Mapped[str | None] = mapped_column("employeeRoleName", String(250), nullable=True)
     employeeCostCenterName: Mapped[str | None] = mapped_column("employeeCostCenterName", String(250), nullable=True)
+    isLoan: Mapped[bool] = mapped_column("isLoan", Boolean, nullable=False, default=True)
     IdConcept: Mapped[int] = mapped_column("IdConcept", Integer, nullable=False)
     conceptName: Mapped[str] = mapped_column("conceptName", String(250), nullable=False)
     IdDeductionPlan: Mapped[int] = mapped_column("IdDeductionPlan", Integer, nullable=False)
@@ -25,10 +26,11 @@ class Loan(Base):
     IdLoanStatus: Mapped[int] = mapped_column("IdLoanStatus", Integer, nullable=False)
     loanStatusName: Mapped[str] = mapped_column("loanStatusName", String(100), nullable=False)
     crossDocument: Mapped[str | None] = mapped_column("crossDocument", String(100), nullable=True)
-    loanAmount: Mapped[Decimal] = mapped_column("loanAmount", Numeric(18, 2), nullable=False)
-    numberInstallments: Mapped[int] = mapped_column("numberInstallments", Integer, nullable=False)
-    paidInstallments: Mapped[int] = mapped_column("paidInstallments", Integer, nullable=False, default=0)
-    remainingAmount: Mapped[Decimal] = mapped_column("remainingAmount", Numeric(18, 2), nullable=False)
+    loanAmount: Mapped[Decimal | None] = mapped_column("loanAmount", Numeric(18, 2), nullable=True)
+    serviceValue: Mapped[Decimal | None] = mapped_column("serviceValue", Numeric(18, 2), nullable=True)
+    numberInstallments: Mapped[int | None] = mapped_column("numberInstallments", Integer, nullable=True)
+    paidInstallments: Mapped[int | None] = mapped_column("paidInstallments", Integer, nullable=True)
+    remainingAmount: Mapped[Decimal | None] = mapped_column("remainingAmount", Numeric(18, 2), nullable=True)
     requestDate: Mapped[date] = mapped_column("requestDate", Date, nullable=False)
     startDiscountDate: Mapped[date] = mapped_column("startDiscountDate", Date, nullable=False)
     endDiscountDate: Mapped[date | None] = mapped_column("endDiscountDate", Date, nullable=True)

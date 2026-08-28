@@ -6,6 +6,7 @@ from app.domain.entities.loan import Loan
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from typing import Optional
+from decimal import Decimal
 from math import ceil
 
 class LoanRepository(ILoanRepository):
@@ -75,6 +76,19 @@ class LoanRepository(ILoanRepository):
         self.db.flush()
 
         return loanData
+
+    def updateServiceValue(self, loanData: Loan, serviceValue: Decimal, updatedByUserName: str, updatedAt: datetime) -> Loan:
+        try:
+            loanData.serviceValue = serviceValue
+            loanData.updatedByUserName = updatedByUserName
+            loanData.updatedAt = updatedAt
+
+            self.db.flush()
+
+            return loanData
+
+        except SQLAlchemyError as e:
+            raise Exception("Error actualizando el valor " f"del servicio: {str(e)}")
 
     def getScheduledLoanIds(self) -> list[int]:
         rows = (self.db.query(Loan.IdLoan).filter(Loan.IdLoanStatus.in_([1, 2])).order_by(Loan.IdLoan.asc()).all())

@@ -1,3 +1,4 @@
+from app.api.serviceDiscountHistoryController import router as serviceDiscountHistoryRouter
 from app.infrastructure.scheduler.loanScheduler import scheduler, configureLoanScheduler
 from app.api.loanStatusHistoryController import router as loanStatusHistoryRouter
 from app.api.typeBankAccountController import router as typeBankAccountRouter
@@ -97,6 +98,7 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+app.include_router(serviceDiscountHistoryRouter)
 app.include_router(loanStatusHistoryRouter)
 app.include_router(typeBankAccountRouter)
 app.include_router(typeWithdrawalRouter)
