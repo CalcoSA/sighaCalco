@@ -21,7 +21,7 @@ def getByIdLoan(IdLoan: int, page: int = Query(1, ge=1), pageSize: int = Query(1
         data = service.getByIdLoan(IdLoan=IdLoan, pagination=pagination)
 
         if not data.items:
-            return apiResponse(isSuccess=False, Message="No existen descuentos registrados para este servicio.", result=data)
+            return apiResponse(isSuccess=False, Message="No existen descuentos registrados para este emolumento.", result=data)
 
         return apiResponse(isSuccess=True, Message="Histórico de descuentos obtenido correctamente.", result=data)
 

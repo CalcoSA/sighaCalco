@@ -184,19 +184,19 @@ class LoanApplication(ILoanApplication):
     def _validateServiceCreate(self, loanData: LoanCreateDto) -> None:
 
         if (loanData.serviceValue is None or loanData.serviceValue <= Decimal("0")):
-            raise ValueError("El valor del servicio debe ser mayor a cero.")
+            raise ValueError("El valor del emolumento debe ser mayor a cero.")
 
         if loanData.loanAmount is not None:
-            raise ValueError("Un servicio no debe tener valor de préstamo.")
+            raise ValueError("Un emolumento no debe tener valor de préstamo.")
 
         if loanData.numberInstallments is not None:
-            raise ValueError("Un servicio no debe tener número de cuotas.")
+            raise ValueError("Un emolumento no debe tener número de cuotas.")
 
         if loanData.loanInstallments:
-            raise ValueError("Un servicio no debe tener cuotas.")
+            raise ValueError("Un emolumento no debe tener cuotas.")
 
         if loanData.endDiscountDate is not None:
-            raise ValueError("Un servicio no debe tener fecha final de descuento.")
+            raise ValueError("Un emolumento no debe tener fecha final de descuento.")
 
     def _normalizeText(self, value: str | None) -> str | None:
         if value is None:
@@ -360,7 +360,7 @@ class LoanApplication(ILoanApplication):
         updatedByUserName = serviceData.updatedByUserName.strip()
 
         if not updatedByUserName:
-            raise ValueError("El usuario que modifica el servicio es obligatorio.")
+            raise ValueError("El usuario que modifica el emolumento es obligatorio.")
 
         try:
             loanFound = self.loanRepository.getByIdForUpdate(IdLoan)
@@ -369,7 +369,7 @@ class LoanApplication(ILoanApplication):
                 raise ValueError("Registro no encontrado.")
 
             if loanFound.isLoan:
-                raise ValueError("El registro seleccionado es un préstamo y no un servicio.")
+                raise ValueError("El registro seleccionado es un préstamo y no un emolumento.")
 
             previousValue = loanFound.serviceValue
             nowColombia = self._nowColombia()
@@ -386,7 +386,7 @@ class LoanApplication(ILoanApplication):
 
             self.loanLogRepository.add(
                 LoanLog(
-                    actionType="Actualización valor servicio",
+                    actionType="Actualización valor emolumento",
                     IdLoan=updatedLoan.IdLoan,
                     IdLoanInstallment=None,
                     installmentNumber=None,
@@ -395,7 +395,7 @@ class LoanApplication(ILoanApplication):
                     loanStatusName=updatedLoan.loanStatusName,
                     installmentStatusName=None,
                     observation=(
-                        "El valor del servicio "
+                        "El valor del emolumento "
                         f"cambió de {previousValue} "
                         "a " f"{serviceData.serviceValue}."
                     ),
@@ -419,7 +419,7 @@ class LoanApplication(ILoanApplication):
         except Exception as exception:
             self.loanRepository.rollback()
 
-            raise Exception("Error al actualizar el valor " f"del servicio: {str(exception)}") from exception
+            raise Exception("Error al actualizar el valor " f"del emolumento: {str(exception)}") from exception
 
     def _processScheduledItem(self, loan: Loan, targetInstallmentDate: date, allowedPlans: set[str], actorUserName: str, result: LoanScheduledDto) -> bool:
 
@@ -658,7 +658,7 @@ class LoanApplication(ILoanApplication):
             return False
 
         if (loan.serviceValue is None or loan.serviceValue <= Decimal("0")):
-            raise ValueError("El servicio no tiene un valor válido para descontar.")
+            raise ValueError("El emolumento no tiene un valor válido para descontar.")
 
         wasModified = False
 
@@ -670,7 +670,7 @@ class LoanApplication(ILoanApplication):
             loan.loanStatusName = "Activo"
             loan.updatedByUserName = actorUserName
             loan.updatedAt = nowColombia
-            activationObservation = ("El servicio cambió de Inactivo a Activo porque llegó la fecha correspondiente para iniciar el descuento.")
+            activationObservation = ("El emolumento cambió de Inactivo a Activo porque llegó la fecha correspondiente para iniciar el descuento.")
 
             self._addScheduledLoanStatusHistory(
                 loan=loan,
@@ -712,10 +712,10 @@ class LoanApplication(ILoanApplication):
 
         self._addScheduledLoanLog(
             loan=loan,
-            actionType="Descuento automático de servicio",
+            actionType="Descuento automático de emolumento",
             observation=(
                 "Se registró el descuento "
-                "del servicio por valor "
+                "del emolumento por valor "
                 f"{loan.serviceValue}, "
                 "correspondiente a la fecha "
                 f"{targetDiscountDate}."
