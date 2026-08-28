@@ -1,3 +1,4 @@
+from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.common.pagination import PaginationParams, PaginatedResult
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
@@ -17,6 +18,10 @@ class ILoanApplication(ABC):
 
     @abstractmethod
     def updateLoanStatus(self, IdLoan: int, loanData: LoanUpdateDto) -> LoanDto:
+        pass
+
+    @abstractmethod
+    def updateServiceValue(self, IdLoan: int, serviceData: ServiceValueUpdateDto) -> LoanDto:
         pass
 
     @abstractmethod

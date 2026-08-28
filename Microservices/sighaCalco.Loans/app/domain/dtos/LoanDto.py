@@ -12,6 +12,7 @@ class LoanDto(BaseModel):
     employeeFullName: str
     employeeRoleName: Optional[str] = None
     employeeCostCenterName: Optional[str] = None
+    isLoan: bool
     crossDocument: Optional[str] = None
     IdConcept: int
     conceptName: str
@@ -19,10 +20,11 @@ class LoanDto(BaseModel):
     deductionPlanName: str
     IdLoanStatus: int
     loanStatusName: str
-    loanAmount: Decimal
-    numberInstallments: int
-    paidInstallments: int
-    remainingAmount: Decimal
+    loanAmount: Optional[Decimal] = None
+    serviceValue: Optional[Decimal] = None
+    numberInstallments: Optional[int] = None
+    paidInstallments: Optional[int] = None
+    remainingAmount: Optional[Decimal] = None
     requestDate: date
     startDiscountDate: date
     endDiscountDate: Optional[date] = None
@@ -38,6 +40,7 @@ class LoanCreateDto(BaseModel):
     employeeFullName: str = Field(..., min_length=1, max_length=250)
     employeeRoleName: Optional[str] = Field(None, max_length=250)
     employeeCostCenterName: Optional[str] = Field(None, max_length=250)
+    isLoan: bool
     crossDocument: Optional[str] = Field(None, max_length=100)
     IdConcept: int
     conceptName: str = Field(..., min_length=1, max_length=250)
@@ -45,14 +48,15 @@ class LoanCreateDto(BaseModel):
     deductionPlanName: str = Field(..., min_length=1, max_length=150)
     IdLoanStatus: int
     loanStatusName: str = Field(..., min_length=1, max_length=100)
-    loanAmount: Decimal
-    numberInstallments: int
+    loanAmount: Optional[Decimal] = None
+    serviceValue: Optional[Decimal] = None
+    numberInstallments: Optional[int] = None
     requestDate: date
     startDiscountDate: date
     endDiscountDate: Optional[date] = None
     observation: Optional[str] = None
     createdByUserName: str = Field(..., min_length=1, max_length=250)
-    loanInstallments: List[LoanInstallmentCreateDto]
+    loanInstallments: List[LoanInstallmentCreateDto] = Field(default_factory=list)
 
 class LoanUpdateDto(BaseModel):
     IdLoanStatus: int = Field(..., ge=1, le=5)

@@ -3,6 +3,7 @@ from app.domain.entities.loan import Loan
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from typing import Optional, List
+from decimal import Decimal
 
 class ILoanRepository(ABC):
 
@@ -32,6 +33,10 @@ class ILoanRepository(ABC):
 
     @abstractmethod
     def updateStatus(self, loanData: Loan, IdLoanStatus: int, loanStatusName: str, updatedByUserName: str, updatedAt: datetime) -> Loan:
+        pass
+
+    @abstractmethod
+    def updateServiceValue(self, loanData: Loan, serviceValue: Decimal, updatedByUserName: str, updatedAt: datetime) -> Loan:
         pass
 
     @abstractmethod
