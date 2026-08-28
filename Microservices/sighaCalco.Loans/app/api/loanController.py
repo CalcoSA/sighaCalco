@@ -136,9 +136,9 @@ def updateLoanStatus(IdLoan: int, loanData: LoanUpdateDto, service: ILoanApplica
 @router.put("/{IdLoan}/service-value", response_model=apiResponse[LoanDto])
 def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service: ILoanApplication = Depends(getLoanApplication)):
     try:
-        logger.info("Actualizando valor del servicio | IdLoan=%s | serviceValue=%s", IdLoan, serviceData.serviceValue)
+        logger.info("Actualizando valor del emolumento | IdLoan=%s | serviceValue=%s", IdLoan, serviceData.serviceValue)
         data = (service.updateServiceValue(IdLoan=IdLoan, serviceData=serviceData))
-        return apiResponse(isSuccess=True, Message="Valor del servicio actualizado correctamente.", result=data)
+        return apiResponse(isSuccess=True, Message="Valor del emolumento actualizado correctamente.", result=data)
 
     except ValueError as exception:
         message = str(exception)
@@ -155,7 +155,7 @@ def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service:
     except Exception:
         logger.exception("Error actualizando valor | IdLoan=%s", IdLoan)
 
-        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al actualizar el valor del servicio."))
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al actualizar el valor del emolumento."))
     
 """
 @router.put("/{IdLoan}", response_model=apiResponseDto[LoanResponseDto])
