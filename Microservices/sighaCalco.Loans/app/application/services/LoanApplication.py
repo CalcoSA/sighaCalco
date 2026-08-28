@@ -59,6 +59,10 @@ class LoanApplication(ILoanApplication):
                 if loanData.isLoan
                 else None
             ),
+            serviceValue=(loanData.serviceValue
+                if not loanData.isLoan
+                else None
+            ),
             numberInstallments=(loanData.numberInstallments
                 if loanData.isLoan
                 else None
