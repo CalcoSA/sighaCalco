@@ -20,21 +20,10 @@ class BukEmployeeClient:
             raise ValueError("El número de documento es obligatorio.")
 
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(
-                f"{self.baseUrl}/employees",
-                params={
-                    "document_number": documentNumber
-                },
-                headers={
-                    "Accept": "application/json",
-                    "auth_token": self.token,
-                },
-            )
+            response = await client.get(f"{self.baseUrl}/employees", params={ "document_number": documentNumber }, headers={ "Accept": "application/json", "auth_token": self.token, },)
 
         response.raise_for_status()
-
         payload = response.json()
-
         employees = []
 
         if isinstance(payload, dict):
@@ -46,17 +35,11 @@ class BukEmployeeClient:
             return None
 
         employee = employees[0]
-
         currentJob = employee.get("current_job") or {}
         role = currentJob.get("role") or {}
         area = currentJob.get("area") or {}
         customAttributes = currentJob.get("custom_attributes") or {}
-
-        costCenterName = (
-            customAttributes.get("Centro costo")
-            or customAttributes.get("Centro de costo")
-            or customAttributes.get("Centro Costo")
-        )
+        costCenterName = (customAttributes.get("Centro costo") or customAttributes.get("Centro de costo") or customAttributes.get("Centro Costo"))
 
         return {
             "documentNumber": employee.get("document_number"),
@@ -64,13 +47,11 @@ class BukEmployeeClient:
             "surname": employee.get("surname"),
             "secondSurname": employee.get("second_surname"),
             "fullName": employee.get("full_name"),
-
+            "status": employee.get("status"),
             "roleName": role.get("name"),
             "roleCode": role.get("code"),
-
             "areaId": currentJob.get("area_id"),
             "areaName": area.get("name") if isinstance(area, dict) else None,
-
             "costCenter": currentJob.get("cost_center"),
             "costCenterName": costCenterName,
         }

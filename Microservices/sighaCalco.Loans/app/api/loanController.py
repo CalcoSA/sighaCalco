@@ -50,23 +50,7 @@ def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=1
     except Exception:
         logger.exception("Error inesperado obteniendo préstamos.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al obtener los préstamos.")
-"""
-@router.get("/{IdLoan}", response_model=apiResponseDto[LoanResponseDto])
-def getLoanById(IdLoan: int, service: ILoanApplication = Depends(getLoanApplication)):
-    try:
-        logger.info("Consultando opción de menú | IdLoan=%s", IdLoan)
-        data = service.getById(IdLoan)
-        logger.info("Opción de menú obtenida correctamente | IdLoan=%s", IdLoan)
-        return apiResponseDto(isSuccess=True, Message="Opción de menú obtenida correctamente.", result=data)
 
-    except ValueError as e:
-        logger.warning("Opción de menú no encontrada | IdLoan=%s | error=%s", IdLoan, str(e))
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-    except Exception:
-        logger.exception("Error inesperado obteniendo opción de menú | IdLoan=%s", IdLoan)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al obtener la opción de menú.")
-"""
 @router.post("/", response_model=apiResponse[LoanDto], status_code=status.HTTP_201_CREATED)
 def createLoan(loanData: LoanCreateDto, service: ILoanApplication = Depends(getLoanApplication)):
     try:
@@ -156,43 +140,3 @@ def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service:
         logger.exception("Error actualizando valor | IdLoan=%s", IdLoan)
 
         raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al actualizar el valor del emolumento."))
-    
-"""
-@router.put("/{IdLoan}", response_model=apiResponseDto[LoanResponseDto])
-def updateLoan(IdLoan: int, LoanData: LoanUpdateDto, service: ILoanApplication = Depends(getLoanApplication)):
-    try:
-        logger.info("Actualizando opción de menú | IdLoan=%s | nameLoan=%s | pathLoan=%s", IdLoan, getattr(LoanData, "nameLoan", None), getattr(LoanData, "pathLoan", None))
-        data = service.update(IdLoan, LoanData)
-        logger.info("Opción de menú actualizada correctamente | IdLoan=%s", IdLoan)
-        return apiResponseDto(isSuccess=True, Message="Opción de menú actualizada correctamente.", result=data)
-
-    except ValueError as e:
-        message = str(e)
-        statusCode = (
-            status.HTTP_404_NOT_FOUND
-            if "no encontrada" in message.lower()
-            else status.HTTP_400_BAD_REQUEST
-        )
-        logger.warning("Validación actualizando opción de menú | IdLoan=%s | status=%s | error=%s", IdLoan, statusCode, message)
-        raise HTTPException(status_code=statusCode, detail=message)
-
-    except Exception:
-        logger.exception("Error inesperado actualizando opción de menú | IdLoan=%s", IdLoan)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al actualizar la opción de menú.")
-
-@router.delete("/{IdLoan}", response_model=apiResponseDto[dict])
-def deleteLoan(IdLoan: int, service: ILoanApplication = Depends(getLoanApplication)):
-    try:
-        logger.info("Eliminando opción de menú | IdLoan=%s", IdLoan)
-        service.delete(IdLoan)
-        logger.info("Opción de menú eliminada correctamente | IdLoan=%s", IdLoan)
-        return apiResponseDto(isSuccess=True, Message="Opción de menú eliminada correctamente.", result={})
-
-    except ValueError as e:
-        logger.warning("Opción de menú no encontrada al eliminar | IdLoan=%s | error=%s", IdLoan, str(e))
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-
-    except Exception:
-        logger.exception("Error inesperado eliminando opción de menú | IdLoan=%s", IdLoan)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al eliminar la opción de menú.")
-"""
