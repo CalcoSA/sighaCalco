@@ -2,6 +2,7 @@ from app.domain.interfaces.IServiceDiscountHistoryRepository import IServiceDisc
 from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
 from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
+from app.infrastructure.external.BukEmployeeClient import BukEmployeeClient
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.application.interfaces.ILoanApplication import ILoanApplication
@@ -32,9 +33,132 @@ class LoanApplication(ILoanApplication):
     def _nowColombia(self) -> datetime:
         return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
 
-    def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
-        data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo)
+    async def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
+        data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+
+        if not data.items:
+            return PaginatedResult(items=[], total=data.total, page=data.page, pageSize=data.pageSize, totalPages=data.totalPages,)
+
+        wasModified = await self._validateBukStatus(loans=data.items)
+
+        if wasModified:
+            data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+
         return PaginatedResult(items=[self._toDto(item) for item in data.items], total=data.total, page=data.page, pageSize=data.pageSize, totalPages=data.totalPages,)
+
+    async def _validateBukStatus(self, loans: list[Loan]) -> bool:
+        bukEmployeeClient = BukEmployeeClient()
+        employeeStatusCache: dict[str, str | None] = {}
+        wasModified = False
+
+        try:
+
+            for loan in loans:
+                documentNumber = (loan.employeeDocumentNumber.strip())
+
+                if not documentNumber:
+                    continue
+
+                if documentNumber not in employeeStatusCache:
+
+                    try:
+                        employee = (await bukEmployeeClient.getEmployeeByDocument(documentNumber))
+
+                        employeeStatusCache[documentNumber] = (
+                            employee.get("status")
+                            if employee
+                            else None
+                        )
+
+                    except Exception:
+                        employeeStatusCache[documentNumber] = None
+                        continue
+
+                employeeStatus = (employeeStatusCache.get(documentNumber))
+
+                if not employeeStatus:
+                    continue
+
+                if (employeeStatus.strip().lower() != "inactivo"):
+                    continue
+
+                if loan.IdLoanStatus in [4, 5]:
+                    continue
+
+                changed = self._cancelByBuk(IdLoan=loan.IdLoan)
+
+                if changed:
+                    wasModified = True
+
+            if wasModified:
+                self.loanRepository.commit()
+
+            return wasModified
+
+        except Exception:
+            self.loanRepository.rollback()
+            raise
+
+    def _cancelByBuk(self, IdLoan: int) -> bool:
+        loanFound = (self.loanRepository.getByIdForUpdate(IdLoan))
+
+        if not loanFound:
+            return False
+
+        if loanFound.IdLoanStatus in [4, 5]:
+            return False
+
+        cancelledStatus = (self.loanStatusRepository.getById(5))
+
+        if not cancelledStatus:
+            raise ValueError("No existe el estado Cancelado.")
+
+        previousStatusName = (loanFound.loanStatusName)
+        nowColombia = self._nowColombia()
+        actorUserName = "VALIDACION_BUK"
+        observation = ("Cancelación automática debido a que el colaborador se encuentra inactivo en BUK.")
+
+        updatedLoan = (
+            self.loanRepository.updateStatus(
+                loanData=loanFound,
+                IdLoanStatus=(cancelledStatus.IdLoanStatus),
+                loanStatusName=(cancelledStatus.nameLoanStatus),
+                updatedByUserName=(actorUserName),
+                updatedAt=nowColombia,
+            )
+        )
+
+        self.loanStatusHistoryRepository.create(
+            LoanStatusHistory(
+                IdLoan=updatedLoan.IdLoan,
+                IdLoanStatus=(cancelledStatus.IdLoanStatus),
+                observation=observation,
+                createdAt=nowColombia,
+                createdByUserName=(actorUserName),
+            )
+        )
+
+        self.loanLogRepository.add(
+            LoanLog(
+                actionType="Cancelación automática BUK",
+                IdLoan=updatedLoan.IdLoan,
+                IdLoanInstallment=None,
+                installmentNumber=None,
+                employeeDocumentNumber=(updatedLoan.employeeDocumentNumber),
+                conceptName=(updatedLoan.conceptName),
+                loanStatusName=(cancelledStatus.nameLoanStatus),
+                installmentStatusName=None,
+                observation=(
+                    f"El estado cambió de "
+                    f"{previousStatusName} a "
+                    f"{cancelledStatus.nameLoanStatus}. "
+                    f"{observation}"
+                ),
+                actorUserName=actorUserName,
+            )
+        )
+
+        return True
     
     def _toDto(self, loan: Loan) -> LoanDto:
         return LoanDto.model_validate(loan)
