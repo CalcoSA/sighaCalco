@@ -1,4 +1,4 @@
-from app.domain.dtos.LoanInstallmentDto import LoanInstallmentDto, LoanInstallmentCreateDto
+from app.domain.dtos.LoanInstallmentDto import LoanInstallmentDto, LoanInstallmentCreateDto, LoanInstallmentUpdateDto
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import date, datetime
 from typing import Optional, List
@@ -62,3 +62,26 @@ class LoanUpdateDto(BaseModel):
     IdLoanStatus: int = Field(..., ge=1, le=5)
     observation: str = Field(..., min_length=1)
     updatedByUserName: str = Field(..., min_length=1, max_length=250)
+
+class LoanReportDto(BaseModel):
+    employeeDocumentNumber: str
+    employeeFullName: str
+    action: str
+    isLoan: bool
+    IdConcept: int
+    conceptName: str
+    startDiscountDate: date
+    endDiscountDate: Optional[date] = None
+    loanAmount: Optional[Decimal] = None
+    serviceValue: Optional[Decimal] = None
+    installmentValue: Optional[Decimal] = None
+    numberInstallments: Optional[int] = None
+    IdDeductionPlan: int
+    deductionPlanName: str
+
+class LoanEditDto(BaseModel):
+    loanAmount: Decimal = Field(..., gt=0)
+    numberInstallments: int = Field(..., ge=1)
+    endDiscountDate: Optional[date] = None
+    updatedByUserName: str = Field(..., min_length=1, max_length=250,)
+    loanInstallments: List[LoanInstallmentUpdateDto] = Field(default_factory=list)
