@@ -1,9 +1,9 @@
+from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
-from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.common.pagination import PaginationParams, PaginatedResult
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List
 from datetime import date
 
 class ILoanApplication(ABC):
@@ -13,11 +13,19 @@ class ILoanApplication(ABC):
         pass
 
     @abstractmethod
+    def getReport(self, dateFrom: date, dateTo: date) -> List[LoanReportDto]:
+        pass
+
+    @abstractmethod
     def create(self, loanData: LoanCreateDto) -> LoanDto:
         pass
 
     @abstractmethod
     def updateLoanStatus(self, IdLoan: int, loanData: LoanUpdateDto) -> LoanDto:
+        pass
+
+    @abstractmethod
+    def updateLoan(self, IdLoan: int, loanData: LoanEditDto) -> LoanDto:
         pass
 
     @abstractmethod

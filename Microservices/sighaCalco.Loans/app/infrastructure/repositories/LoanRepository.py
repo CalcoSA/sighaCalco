@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.exc import SQLAlchemyError
 from app.domain.entities.loan import Loan
 from datetime import datetime, date
+from typing import Optional, List
 from zoneinfo import ZoneInfo
-from typing import Optional
 from decimal import Decimal
 from math import ceil
 
@@ -46,6 +46,21 @@ class LoanRepository(ILoanRepository):
     def getByIdForUpdate(self, IdLoan: int) -> Optional[Loan]:
         return self.db.query(Loan).options(selectinload(Loan.loanInstallments)).filter(Loan.IdLoan == IdLoan).with_for_update().first()
 
+    def getReport(self, dateFrom: date, dateTo: date) -> List[Loan]:
+        try:
+            return (
+                self.db.query(Loan)
+                .options(selectinload(Loan.loanInstallments))
+                .filter(Loan.startDiscountDate >= dateFrom, Loan.startDiscountDate <= dateTo, Loan.IdLoanStatus == 1)
+                .order_by(Loan.startDiscountDate.asc(), Loan.employeeDocumentNumber.asc(), Loan.IdLoan.asc())
+                .all()
+            )
+
+        except SQLAlchemyError as e:
+            self.db.rollback()
+
+            raise Exception("Error obteniendo el reporte de préstamos " f"y emolumentos: {str(e)}")
+
     def create(self, loanData: Loan) -> Loan:
         try:
             nowColombia = self._nowColombia()
@@ -70,6 +85,19 @@ class LoanRepository(ILoanRepository):
     def updateStatus(self, loanData: Loan, IdLoanStatus: int, loanStatusName: str, updatedByUserName: str, updatedAt: datetime) -> Loan:
         loanData.IdLoanStatus = IdLoanStatus
         loanData.loanStatusName = loanStatusName
+        loanData.updatedByUserName = updatedByUserName
+        loanData.updatedAt = updatedAt
+
+        self.db.flush()
+
+        return loanData
+
+    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
+        loanData.loanAmount = loanAmount
+        loanData.numberInstallments = numberInstallments
+        loanData.paidInstallments = paidInstallments
+        loanData.remainingAmount = remainingAmount
+        loanData.endDiscountDate = endDiscountDate
         loanData.updatedByUserName = updatedByUserName
         loanData.updatedAt = updatedAt
 
