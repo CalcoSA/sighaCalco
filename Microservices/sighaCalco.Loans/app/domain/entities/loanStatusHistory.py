@@ -8,6 +8,7 @@ from datetime import datetime
 
 if TYPE_CHECKING:
     from app.domain.entities.loanStatus import LoanStatus
+    from app.domain.entities.loan import Loan
 
 class LoanStatusHistory(Base):
     __tablename__ = "loan_loanStatusHistory"
@@ -20,3 +21,4 @@ class LoanStatusHistory(Base):
     createdByUserName: Mapped[str] = mapped_column("createdByUserName", String(250), nullable=False)
 
     loanStatus: Mapped["LoanStatus"] = relationship("LoanStatus")
+    loan: Mapped["Loan"] = relationship("Loan")

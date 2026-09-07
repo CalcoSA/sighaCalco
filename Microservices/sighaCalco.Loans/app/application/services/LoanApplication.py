@@ -1,10 +1,10 @@
 from app.domain.interfaces.IServiceDiscountHistoryRepository import IServiceDiscountHistoryRepository
+from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
 from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
 from app.infrastructure.external.BukEmployeeClient import BukEmployeeClient
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
-from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.application.interfaces.ILoanApplication import ILoanApplication
 from app.domain.interfaces.ILoanLogRepository import ILoanLogRepository
 from app.common.pagination import PaginationParams, PaginatedResult
@@ -16,10 +16,10 @@ from app.domain.entities.loanLog import LoanLog
 from sqlalchemy.exc import SQLAlchemyError
 from app.domain.entities.loan import Loan
 from datetime import date, datetime
+from typing import Optional, List
 from calendar import monthrange
 from zoneinfo import ZoneInfo
 from decimal import Decimal
-from typing import Optional
 
 class LoanApplication(ILoanApplication):
 
@@ -162,6 +162,94 @@ class LoanApplication(ILoanApplication):
     
     def _toDto(self, loan: Loan) -> LoanDto:
         return LoanDto.model_validate(loan)
+
+    def getReport(self, dateFrom: date, dateTo: date) -> List[LoanReportDto]:
+
+        if dateFrom > dateTo:
+            raise ValueError("La fecha desde no puede ser mayor a la fecha hasta.")
+
+        createdRecords = (self.loanRepository.getReport(dateFrom=dateFrom, dateTo=dateTo))
+        modifiedRecords = (self.loanLogRepository.getReportModifications(dateFrom=dateFrom, dateTo=dateTo))
+        deletedRecords = (self.loanStatusHistoryRepository.getReportDeletions(dateFrom=dateFrom, dateTo=dateTo))
+        result: List[LoanReportDto] = []
+
+        for loan in createdRecords:
+            result.append(self._buildReportDto(loan=loan, action="Crear",))
+
+        for log in modifiedRecords:
+
+            if not log.IdLoan:
+                continue
+
+            loan = self.loanRepository.getById(log.IdLoan)
+
+            if not loan:
+                continue
+
+            result.append(self._buildReportDto(loan=loan, action="Modificar",))
+
+        for history in deletedRecords:
+
+            if not history.loan:
+                continue
+
+            result.append(self._buildReportDto(loan=history.loan, action="Eliminar",))
+
+        return result
+
+    def _buildReportDto(self, loan: Loan, action: str) -> LoanReportDto:
+        installmentValue = None
+
+        if loan.isLoan:
+            if action == "Modificar":
+
+                firstPendingInstallment = next(
+                    (
+                        installment
+                        for installment in sorted(
+                            loan.loanInstallments,
+                            key=lambda item: item.installmentNumber,
+                        )
+                        if not installment.isPaid
+                    ),
+                    None,
+                )
+
+                if firstPendingInstallment:
+                    installmentValue = (firstPendingInstallment.installmentValue)
+
+            else:
+                
+                firstInstallment = next(
+                    (
+                        installment
+                        for installment in sorted(
+                            loan.loanInstallments,
+                            key=lambda item: item.installmentNumber,
+                        )
+                    ),
+                    None,
+                )
+
+                if firstInstallment:
+                    installmentValue = (firstInstallment.installmentValue)
+
+        return LoanReportDto(
+            employeeDocumentNumber=(loan.employeeDocumentNumber),
+            employeeFullName=(loan.employeeFullName),
+            action=action,
+            isLoan=loan.isLoan,
+            IdConcept=loan.IdConcept,
+            conceptName=loan.conceptName,
+            startDiscountDate=(loan.startDiscountDate),
+            endDiscountDate=(loan.endDiscountDate),
+            loanAmount=loan.loanAmount,
+            serviceValue=loan.serviceValue,
+            installmentValue=installmentValue,
+            numberInstallments=(loan.numberInstallments),
+            IdDeductionPlan=(loan.IdDeductionPlan),
+            deductionPlanName=(loan.deductionPlanName),
+        )
 
     def create(self, loanData: LoanCreateDto) -> LoanDto:
         self._validateCreate(loanData)
@@ -479,6 +567,245 @@ class LoanApplication(ILoanApplication):
             self.loanRepository.rollback()
 
             raise Exception("Error al actualizar el estado del " f"préstamo: {str(exception)}") from exception
+
+    def updateLoan(self, IdLoan: int, loanData: LoanEditDto) -> LoanDto:
+        updatedByUserName = loanData.updatedByUserName.strip()
+
+        if not updatedByUserName:
+            raise ValueError("El usuario que modifica el préstamo es obligatorio.")
+
+        try:
+            loanFound = self.loanRepository.getByIdForUpdate(IdLoan)
+
+            if not loanFound:
+                raise ValueError("Préstamo no encontrado.")
+
+            if not loanFound.isLoan:
+                raise ValueError("El registro seleccionado es un emolumento y no un préstamo.")
+
+            if loanFound.IdLoanStatus == 4:
+                raise ValueError("No se puede modificar un préstamo que se encuentra Terminado.")
+
+            if loanFound.IdLoanStatus == 5:
+                raise ValueError("No se puede modificar un préstamo que se encuentra Cancelado.")
+
+            if loanData.loanAmount <= Decimal("0"):
+                raise ValueError("El valor del préstamo debe ser mayor a cero.")
+
+            if loanData.numberInstallments <= 0:
+                raise ValueError("El número de cuotas debe ser mayor a cero.")
+
+            if (loanData.endDiscountDate and loanData.endDiscountDate < loanFound.startDiscountDate):
+                raise ValueError("La fecha final del descuento no puede ser menor a la fecha inicial.")
+
+            paidInstallments = sorted(
+                [
+                    installment
+                    for installment in loanFound.loanInstallments
+                    if installment.isPaid
+                ],
+                key=lambda installment: installment.installmentNumber,
+            )
+
+            currentPendingInstallments = [
+                installment
+                for installment in loanFound.loanInstallments
+                if not installment.isPaid
+            ]
+
+            paidCount = len(paidInstallments)
+
+            if loanData.numberInstallments < paidCount:
+                raise ValueError("El número de cuotas no puede ser menor a la cantidad de cuotas que ya se encuentran pagadas.")
+
+            expectedPendingCount = (loanData.numberInstallments - paidCount)
+
+            if (len(loanData.loanInstallments) != expectedPendingCount):
+                raise ValueError("La cantidad de cuotas pendientes enviada no coincide con el nuevo número total de cuotas.")
+
+            allInstallmentsById = {
+                installment.IdLoanInstallment: installment
+                for installment in loanFound.loanInstallments
+            }
+
+            pendingById = {
+                installment.IdLoanInstallment: installment
+                for installment in currentPendingInstallments
+            }
+
+            receivedIds = [
+                installment.IdLoanInstallment
+                for installment in loanData.loanInstallments
+                if installment.IdLoanInstallment is not None
+            ]
+
+            if len(receivedIds) != len(set(receivedIds)):
+                raise ValueError("Existen cuotas pendientes repetidas en la actualización.")
+
+            for IdLoanInstallment in receivedIds:
+                existingInstallment = (allInstallmentsById.get(IdLoanInstallment))
+
+                if not existingInstallment:
+                    raise ValueError(f"La cuota {IdLoanInstallment} no pertenece al préstamo.")
+
+                if existingInstallment.isPaid:
+                    raise ValueError(f"La cuota número " f"{existingInstallment.installmentNumber} ya se encuentra pagada y no puede modificarse.")
+
+            pendingNumbers = [
+                installment.installmentNumber
+                for installment in loanData.loanInstallments
+            ]
+
+            if (len(pendingNumbers) != len(set(pendingNumbers))):
+                raise ValueError("No pueden existir números de cuota repetidos.")
+
+            paidNumbers = {
+                installment.installmentNumber
+                for installment in paidInstallments
+            }
+
+            if paidNumbers.intersection(pendingNumbers):
+                raise ValueError("No se puede utilizar el número de una cuota que ya se encuentra pagada.")
+
+            allInstallmentNumbers = sorted(list(paidNumbers) + pendingNumbers)
+            expectedInstallmentNumbers = list(range(1, loanData.numberInstallments + 1,))
+
+            if (allInstallmentNumbers != expectedInstallmentNumbers):
+                raise ValueError("La numeración de las cuotas debe ser consecutiva desde 1 hasta el número total de cuotas.")
+
+            paidTotal = sum(
+                (
+                    installment.installmentValue
+                    for installment in paidInstallments
+                ),
+                Decimal("0"),
+            )
+
+            pendingTotal = sum(
+                (
+                    installment.installmentValue
+                    for installment
+                    in loanData.loanInstallments
+                ),
+                Decimal("0"),
+            )
+
+            totalInstallments = (paidTotal + pendingTotal).quantize(Decimal("0.01"))
+            loanAmount = loanData.loanAmount.quantize(Decimal("0.01"))
+
+            if totalInstallments != loanAmount:
+                raise ValueError("La suma de las cuotas pagadas y pendientes debe ser igual al nuevo valor del préstamo.")
+
+            commitmentDates = [
+                installment.commitmentDate
+                for installment in paidInstallments
+            ]
+
+            commitmentDates.extend(
+                installment.commitmentDate
+                for installment
+                in loanData.loanInstallments
+            )
+
+            if (loanData.endDiscountDate and commitmentDates and max(commitmentDates) > loanData.endDiscountDate):
+                raise ValueError("Existen cuotas con fecha compromiso posterior a la fecha final del descuento.")
+
+            previousLoanAmount = loanFound.loanAmount
+            previousNumberInstallments = (loanFound.numberInstallments)
+            previousEndDiscountDate = (loanFound.endDiscountDate)
+            newPendingInstallments: list[LoanInstallment] = []
+
+            for installmentData in loanData.loanInstallments:
+
+                if (installmentData.IdLoanInstallment is not None):
+                    installment = pendingById.get(installmentData.IdLoanInstallment)
+
+                    if not installment:
+                        raise ValueError("La cuota pendiente indicada no pertenece al préstamo.")
+
+                    installment.installmentNumber = (installmentData.installmentNumber)
+                    installment.installmentValue = (installmentData.installmentValue)
+                    installment.commitmentDate = (installmentData.commitmentDate)
+                    installment.isPaid = False
+                    installment.paymentDate = None
+                    newPendingInstallments.append(installment)
+
+                else:
+                    newPendingInstallments.append(
+                        LoanInstallment(
+                            installmentNumber=(installmentData.installmentNumber),
+                            installmentValue=(installmentData.installmentValue),
+                            isPaid=False,
+                            commitmentDate=(installmentData.commitmentDate),
+                            paymentDate=None,
+                        )
+                    )
+
+            loanFound.loanInstallments = (paidInstallments + newPendingInstallments)
+            remainingAmount = pendingTotal.quantize( Decimal("0.01"))
+            nowColombia = self._nowColombia()
+            updatedLoan = self.loanRepository.updateLoan(
+                loanData=loanFound,
+                loanAmount=loanAmount,
+                numberInstallments=(loanData.numberInstallments),
+                paidInstallments=paidCount,
+                remainingAmount=remainingAmount,
+                endDiscountDate=(loanData.endDiscountDate),
+                updatedByUserName=updatedByUserName,
+                updatedAt=nowColombia,
+            )
+
+            self.loanLogRepository.add(
+                LoanLog(
+                    actionType="Actualización de préstamo",
+                    IdLoan=updatedLoan.IdLoan,
+                    IdLoanInstallment=None,
+                    installmentNumber=None,
+                    employeeDocumentNumber=(updatedLoan.employeeDocumentNumber),
+                    conceptName=updatedLoan.conceptName,
+                    loanStatusName=updatedLoan.loanStatusName,
+                    installmentStatusName=None,
+                    observation=(
+                        "Se actualizó la información del préstamo. "
+                        f"Valor: {previousLoanAmount} "
+                        f"a {updatedLoan.loanAmount}. "
+                        f"Número de cuotas: "
+                        f"{previousNumberInstallments} "
+                        f"a {updatedLoan.numberInstallments}. "
+                        f"Fecha final: "
+                        f"{previousEndDiscountDate} "
+                        f"a {updatedLoan.endDiscountDate}. "
+                        f"Se conservaron {paidCount} "
+                        "cuotas pagadas sin modificación y "
+                        f"se actualizaron "
+                        f"{len(newPendingInstallments)} "
+                        "cuotas pendientes."
+                    ),
+                    actorUserName=updatedByUserName,
+                )
+            )
+
+            self.loanRepository.commit()
+            refreshedLoan = self.loanRepository.getById(IdLoan)
+
+            if not refreshedLoan:
+                raise Exception("No fue posible recuperar el préstamo actualizado.")
+
+            return LoanDto.model_validate(refreshedLoan)
+
+        except ValueError:
+            self.loanRepository.rollback()
+            raise
+
+        except SQLAlchemyError as exception:
+            self.loanRepository.rollback()
+
+            raise Exception("Error de base de datos al actualizar " f"el préstamo: {str(exception)}") from exception
+
+        except Exception as exception:
+            self.loanRepository.rollback()
+
+            raise Exception("Error al actualizar el préstamo: " f"{str(exception)}") from exception
 
     def updateServiceValue(self, IdLoan: int, serviceData: ServiceValueUpdateDto) -> LoanDto:
         updatedByUserName = serviceData.updatedByUserName.strip()

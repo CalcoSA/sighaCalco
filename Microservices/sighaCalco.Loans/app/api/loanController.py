@@ -1,7 +1,7 @@
 from app.infrastructure.repositories.ServiceDiscountHistoryRepository import ServiceDiscountHistoryRepository
+from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.infrastructure.repositories.LoanStatusHistoryRepository import LoanStatusHistoryRepository
 from app.infrastructure.repositories.LoanStatusRepository import LoanStatusRepository
-from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto
 from app.infrastructure.repositories.LoanLogRepository import LoanLogRepository
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.infrastructure.repositories.LoanRepository import LoanRepository
@@ -36,10 +36,10 @@ def getLoanApplication(db: Session = Depends(getDb)) -> ILoanApplication:
     )
 
 @router.get("/", response_model=apiResponse)
-def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=100), employeeDocumentNumber: Optional[str] = Query(None), IdLoanStatus: Optional[int] = Query(None), requestDateFrom: Optional[date] = Query(None), requestDateTo: Optional[date] = Query(None), service: ILoanApplication = Depends(getLoanApplication),):
+async def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=100), employeeDocumentNumber: Optional[str] = Query(None), IdLoanStatus: Optional[int] = Query(None), requestDateFrom: Optional[date] = Query(None), requestDateTo: Optional[date] = Query(None), service: ILoanApplication = Depends(getLoanApplication),):
     try:
         pagination = PaginationParams(page=page, pageSize=pageSize)
-        data = service.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+        data = await service.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
 
         if not data.items:
             logger.info("No existen préstamos registrados con los filtros enviados.")
@@ -50,6 +50,27 @@ def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=1
     except Exception:
         logger.exception("Error inesperado obteniendo préstamos.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al obtener los préstamos.")
+
+@router.get("/report", response_model=apiResponse[list[LoanReportDto]])
+def getLoanReport(dateFrom: date = Query(...), dateTo: date = Query(...), service: ILoanApplication = Depends(getLoanApplication)):
+    try:
+        logger.info("Generando reporte de préstamos y emolumentos | dateFrom=%s | dateTo=%s", dateFrom, dateTo)
+        data = service.getReport(dateFrom=dateFrom, dateTo=dateTo)
+
+        if not data:
+            logger.info("No existen registros para el rango seleccionado | dateFrom=%s | dateTo=%s", dateFrom, dateTo)
+            return apiResponse(isSuccess=False, Message=("No existen préstamos o emolumentos para el rango de fechas seleccionado."), result=[])
+
+        logger.info("Reporte obtenido correctamente | dateFrom=%s | dateTo=%s | total=%s", dateFrom, dateTo, len(data))
+        return apiResponse(isSuccess=True, Message=("Reporte obtenido correctamente."), result=data)
+
+    except ValueError as exception:
+        logger.warning("Validación generando reporte | dateFrom=%s | dateTo=%s | error=%s", dateFrom, dateTo, str(exception))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exception))
+
+    except Exception:
+        logger.exception("Error inesperado generando reporte | dateFrom=%s | dateTo=%s", dateFrom, dateTo)
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al generar el reporte de préstamos y emolumentos."))
 
 @router.post("/", response_model=apiResponse[LoanDto], status_code=status.HTTP_201_CREATED)
 def createLoan(loanData: LoanCreateDto, service: ILoanApplication = Depends(getLoanApplication)):
@@ -116,6 +137,30 @@ def updateLoanStatus(IdLoan: int, loanData: LoanUpdateDto, service: ILoanApplica
     except Exception:
         logger.exception("Error inesperado actualizando estado | IdLoan=%s | IdLoanStatus=%s", IdLoan, loanData.IdLoanStatus)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al actualizar el estado del préstamo.")
+
+@router.put("/{IdLoan}", response_model=apiResponse[LoanDto],)
+def updateLoan(IdLoan: int, loanData: LoanEditDto, service: ILoanApplication = Depends(getLoanApplication),):
+    try:
+        logger.info("Actualizando préstamo | IdLoan=%s | loanAmount=%s | numberInstallments=%s | updatedByUserName=%s", IdLoan, loanData.loanAmount, loanData.numberInstallments, loanData.updatedByUserName,)
+        data = service.updateLoan(IdLoan=IdLoan, loanData=loanData,)
+        logger.info("Préstamo actualizado correctamente | IdLoan=%s", IdLoan,)
+        return apiResponse(isSuccess=True, Message="Préstamo actualizado correctamente.", result=data,)
+
+    except ValueError as exception:
+        message = str(exception)
+
+        statusCode = (
+            status.HTTP_404_NOT_FOUND
+            if "préstamo no encontrado" in message.lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+
+        logger.warning("Validación actualizando préstamo | IdLoan=%s | status=%s | error=%s", IdLoan, statusCode, message,)
+        raise HTTPException(status_code=statusCode, detail=message,)
+
+    except Exception:
+        logger.exception("Error inesperado actualizando préstamo | IdLoan=%s", IdLoan,)
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail="Error al actualizar el préstamo.",)
 
 @router.put("/{IdLoan}/service-value", response_model=apiResponse[LoanDto])
 def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service: ILoanApplication = Depends(getLoanApplication)):

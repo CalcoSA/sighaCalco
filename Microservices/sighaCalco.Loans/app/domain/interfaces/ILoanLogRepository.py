@@ -3,11 +3,16 @@ from app.domain.entities.loanLog import LoanLog
 from abc import ABC, abstractmethod
 from typing import Optional
 from datetime import date
+from typing import List
 
 class ILoanLogRepository(ABC):
 
     @abstractmethod
     def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, actionDateFrom: Optional[date] = None, actionDateTo: Optional[date] = None,) -> PaginatedResult[LoanLog]:
+        pass
+
+    @abstractmethod
+    def getReportModifications(self, dateFrom: date, dateTo: date) -> List[LoanLog]:
         pass
 
     @abstractmethod

@@ -28,11 +28,19 @@ class ILoanRepository(ABC):
         pass
 
     @abstractmethod
+    def getReport(self, dateFrom: date, dateTo: date) -> List[Loan]:
+        pass
+
+    @abstractmethod
     def create(self, loanData: Loan) -> Loan:
         pass
 
     @abstractmethod
     def updateStatus(self, loanData: Loan, IdLoanStatus: int, loanStatusName: str, updatedByUserName: str, updatedAt: datetime) -> Loan:
+        pass
+
+    @abstractmethod
+    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
         pass
 
     @abstractmethod

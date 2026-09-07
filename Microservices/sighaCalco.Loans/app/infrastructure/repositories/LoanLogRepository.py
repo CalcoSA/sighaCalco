@@ -4,8 +4,8 @@ from app.domain.entities.loanLog import LoanLog
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, date, time
 from sqlalchemy.orm import Session
+from typing import Optional, List
 from zoneinfo import ZoneInfo
-from typing import Optional
 from math import ceil
 
 class LoanLogRepository(ILoanLogRepository):
@@ -36,6 +36,27 @@ class LoanLogRepository(ILoanLogRepository):
         totalPages = ceil(total / pagination.pageSize) if pagination.pageSize > 0 else 0
 
         return PaginatedResult(items=items, total=total, page=pagination.page, pageSize=pagination.pageSize, totalPages=totalPages,)
+
+    def getReportModifications(self, dateFrom: date, dateTo: date) -> List[LoanLog]:
+        startDate = datetime.combine(dateFrom, time.min)
+        endDate = datetime.combine(dateTo, time.max)
+
+        return (
+            self.db.query(LoanLog)
+            .filter(
+                LoanLog.actionType.in_(
+                    [
+                        "Actualización de préstamo",
+                        "Actualización valor emolumento",
+                    ]
+                ),
+                LoanLog.actionDate >= startDate,
+                LoanLog.actionDate <= endDate,
+                LoanLog.IdLoan.isnot(None),
+            )
+            .order_by(LoanLog.actionDate.asc(), LoanLog.IdLoanLog.asc(),)
+            .all()
+        )
 
     def create(self, loanLogData: LoanLog) -> LoanLog:
         try:

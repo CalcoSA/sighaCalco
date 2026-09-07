@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from decimal import Decimal
 from typing import Optional
 from datetime import date
@@ -20,3 +20,9 @@ class LoanInstallmentCreateDto(BaseModel):
     isPaid: bool = False
     commitmentDate: date
     paymentDate: Optional[date] = None
+
+class LoanInstallmentUpdateDto(BaseModel):
+    IdLoanInstallment: Optional[int] = None
+    installmentNumber: int = Field(..., ge=1)
+    installmentValue: Decimal = Field(..., gt=0)
+    commitmentDate: date
