@@ -744,6 +744,11 @@ class LoanApplication(ILoanApplication):
             loanFound.loanInstallments = (paidInstallments + newPendingInstallments)
             remainingAmount = pendingTotal.quantize( Decimal("0.01"))
             nowColombia = self._nowColombia()
+            loanFound.observation = self._appendObservation(
+                currentObservation=loanFound.observation,
+                newObservation=loanData.observation,
+                updateDate=nowColombia,
+            )
             updatedLoan = self.loanRepository.updateLoan(
                 loanData=loanFound,
                 loanAmount=loanAmount,
@@ -824,10 +829,13 @@ class LoanApplication(ILoanApplication):
 
             previousValue = loanFound.serviceValue
             nowColombia = self._nowColombia()
-
+            loanFound.observation = self._appendObservation(
+                currentObservation=loanFound.observation,
+                newObservation=serviceData.observation,
+                updateDate=nowColombia,
+            )
             updatedLoan = (
-                self.loanRepository
-                .updateServiceValue(
+                self.loanRepository.updateServiceValue(
                     loanData=loanFound,
                     serviceValue=serviceData.serviceValue,
                     updatedByUserName=updatedByUserName,
@@ -1280,3 +1288,32 @@ class LoanApplication(ILoanApplication):
             return dates
 
         raise ValueError("El plan de deducción del préstamo no es válido.")
+
+    def _appendObservation(self, currentObservation: Optional[str], newObservation: Optional[str], updateDate: datetime,) -> Optional[str]:
+        newText = (
+            newObservation.strip()
+            if newObservation
+            else ""
+        )
+
+        if not newText:
+            return currentObservation
+
+        datedObservation = (
+            f"{updateDate.strftime('%d/%m/%Y')} - "
+            f"{newText}"
+        )
+
+        currentText = (
+            currentObservation.strip()
+            if currentObservation
+            else ""
+        )
+
+        if not currentText:
+            return datedObservation
+
+        return (
+            f"{currentText}\n"
+            f"{datedObservation}"
+        )

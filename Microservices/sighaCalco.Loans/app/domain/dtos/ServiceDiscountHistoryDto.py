@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict, Field
 from datetime import date, datetime
+from typing import Optional
 from decimal import Decimal
 
 class ServiceDiscountHistoryDto(BaseModel):
@@ -14,4 +15,5 @@ class ServiceDiscountHistoryDto(BaseModel):
 
 class ServiceValueUpdateDto(BaseModel):
     serviceValue: Decimal = Field(..., gt=0)
+    observation: Optional[str] = Field(None, max_length=2000,)
     updatedByUserName: str = Field(..., min_length=1, max_length=250)
