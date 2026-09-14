@@ -1,6 +1,8 @@
+from app.domain.dtos.LoanReconciliationDto import LoanReconciliationItemDto, LoanReconciliationGroupDto, LoanReconciliationResultDto
 from app.domain.interfaces.IServiceDiscountHistoryRepository import IServiceDiscountHistoryRepository
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
+from app.infrastructure.excel.ReconciliationExcelReader import ReconciliationExcelReader
 from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
 from app.infrastructure.external.BukEmployeeClient import BukEmployeeClient
@@ -250,6 +252,381 @@ class LoanApplication(ILoanApplication):
             IdDeductionPlan=(loan.IdDeductionPlan),
             deductionPlanName=(loan.deductionPlanName),
         )
+
+    def getReconciliation(self, fileContent: bytes,) -> LoanReconciliationResultDto:
+        excelReader = ReconciliationExcelReader()
+        fileRecords = excelReader.read(fileContent)
+        activeLoans = self.loanRepository.getActiveForReconciliation()
+
+        serviceIds = [
+            loan.IdLoan
+            for loan in activeLoans
+            if not loan.isLoan
+        ]
+
+        latestServiceDiscounts = self.serviceDiscountHistoryRepository.getLatestByLoanIds(serviceIds)
+        sighaRecords: list[dict] = []
+
+        for loan in activeLoans:
+
+            documentNumber =  self._normalizeDocumentForReconciliation(loan.employeeDocumentNumber)
+            lastDiscountDate = None
+            amount = None
+
+            if loan.isLoan:
+                paidInstallments = sorted(
+                    [
+                        installment
+                        for installment
+                        in loan.loanInstallments
+                        if installment.isPaid
+                    ],
+                    key=lambda installment: (
+                        installment.paymentDate
+                        or installment.commitmentDate,
+                        installment.installmentNumber,
+                    ),
+                    reverse=True,
+                )
+
+                if paidInstallments:
+                    lastInstallment = paidInstallments[0]
+                    lastDiscountDate = lastInstallment.paymentDate or lastInstallment.commitmentDate
+                    amount = lastInstallment.installmentValue
+                else:
+                    pendingInstallments = sorted(
+                        [
+                            installment
+                            for installment
+                            in loan.loanInstallments
+                            if not installment.isPaid
+                        ],
+                        key=lambda installment: (
+                            installment.commitmentDate,
+                            installment.installmentNumber,
+                        ),
+                    )
+
+                    if pendingInstallments:
+                        amount = pendingInstallments[0].installmentValue
+            else:
+                latestDiscount = latestServiceDiscounts.get(loan.IdLoan)
+
+                if latestDiscount:
+                    lastDiscountDate = latestDiscount.discountDate
+                    amount = latestDiscount.discountValue
+                else:
+                    amount = loan.serviceValue
+
+            sighaRecords.append(
+                {
+                    "IdLoan": loan.IdLoan,
+                    "isLoan": loan.isLoan,
+                    "documentNumber": documentNumber,
+                    "fullName": loan.employeeFullName,
+                    "conceptName": loan.conceptName,
+                    "lastDiscountDate": lastDiscountDate,
+                    "amount": (amount.quantize(Decimal("0.01"))
+                        if amount is not None
+                        else None
+                    ),
+                }
+            )
+
+        matchedItems = self._matchReconciliation(sighaRecords=sighaRecords, fileRecords=fileRecords,)
+        groups = self._groupReconciliationByConcept(items=matchedItems)
+
+        return LoanReconciliationResultDto(
+            total=len(matchedItems),
+            equals=sum(
+                1
+                for item in matchedItems
+                if item.status == "IGUAL"
+            ),
+            different=sum(
+                1
+                for item in matchedItems
+                if item.status == "DIFERENTE"
+            ),
+            notInFile=sum(
+                1
+                for item in matchedItems
+                if item.status == "NO_EN_ARCHIVO"
+            ),
+            notInSigha=sum(
+                1
+                for item in matchedItems
+                if item.status == "NO_EN_SIGHA"
+            ),
+            groups=groups,
+        )
+
+    def _normalizeDocumentForReconciliation(self, value: str,) -> str:
+
+        if not value:
+            return ""
+
+        return "".join(
+            character
+            for character in value
+            if character.isdigit()
+        )
+
+    def _matchReconciliation(self, sighaRecords: list[dict], fileRecords: list[dict],) -> list[LoanReconciliationItemDto]:
+        result: list[LoanReconciliationItemDto] = []
+
+        documents = {
+            item["documentNumber"]
+            for item in sighaRecords
+        }
+
+        documents.update(
+            item["documentNumber"]
+            for item in fileRecords
+        )
+
+        for documentNumber in sorted(documents):
+            sighaGroup = [
+                item
+                for item in sighaRecords
+                if item["documentNumber"] == documentNumber
+            ]
+
+            fileGroup = [
+                item
+                for item in fileRecords
+                if item["documentNumber"] == documentNumber
+            ]
+
+            usedSigha: set[int] = set()
+            usedFile: set[int] = set()
+
+            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+                if sighaItem["amount"] is None:
+                    continue
+
+                for (fileIndex, fileItem,) in enumerate(fileGroup):
+                    if fileIndex in usedFile:
+                        continue
+
+                    difference = fileItem["amount"] - sighaItem["amount"]
+
+                    if abs(difference) <= Decimal("0.01"):
+                        result.append(
+                            self._buildReconciliationItem(
+                                sighaItem=(sighaItem),
+                                fileItem=(fileItem),
+                                status="IGUAL",
+                            )
+                        )
+
+                        usedSigha.add(sighaIndex)
+                        usedFile.add(fileIndex)
+
+                        break
+
+            possiblePairs = []
+
+            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+                if sighaIndex in usedSigha:
+                    continue
+
+                if sighaItem["amount"] is None:
+                    continue
+
+                for (fileIndex, fileItem,) in enumerate(fileGroup):
+                    if fileIndex in usedFile:
+                        continue
+
+                    difference = abs(fileItem["amount"] - sighaItem["amount"])
+                    possiblePairs.append(difference, sighaIndex, fileIndex,)
+
+            possiblePairs.sort(key=lambda item: (item[0], item[1], item[2],))
+
+            for (_, sighaIndex, fileIndex,) in possiblePairs:
+                if sighaIndex in usedSigha:
+                    continue
+
+                if fileIndex in usedFile:
+                    continue
+
+                result.append(
+                    self._buildReconciliationItem(
+                        sighaItem=(sighaGroup[sighaIndex]),
+                        fileItem=(fileGroup[fileIndex]),
+                        status="DIFERENTE",
+                    )
+                )
+
+                usedSigha.add(sighaIndex)
+                usedFile.add(fileIndex)
+
+            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+                if sighaIndex in usedSigha:
+                    continue
+
+                result.append(
+                    self._buildReconciliationItem(
+                        sighaItem=sighaItem,
+                        fileItem=None,
+                        status="NO_EN_ARCHIVO",
+                    )
+                )
+
+            for (fileIndex, fileItem,) in enumerate(fileGroup):
+                if fileIndex in usedFile:
+                    continue
+
+                result.append(
+                    self._buildReconciliationItem(
+                        sighaItem=None,
+                        fileItem=fileItem,
+                        status="NO_EN_SIGHA",
+                    )
+                )
+
+        return result
+
+    def _buildReconciliationItem(self, sighaItem: dict | None, fileItem: dict | None, status: str,) -> LoanReconciliationItemDto:
+        sighaAmount = (
+            sighaItem["amount"]
+            if sighaItem
+            else None
+        )
+        fileAmount = (
+            fileItem["amount"]
+            if fileItem
+            else None
+        )
+        difference = None
+
+        if sighaAmount is not None and fileAmount is not None:
+            difference = (fileAmount - sighaAmount).quantize(Decimal("0.01"))
+
+        return LoanReconciliationItemDto(
+            status=status,
+            fileDocumentNumber=(
+                fileItem["documentNumber"]
+                if fileItem
+                else None
+            ),
+            fileFullName=(
+                fileItem["fullName"]
+                if fileItem
+                else None
+            ),
+            fileAmount=fileAmount,
+            IdLoan=(
+                sighaItem["IdLoan"]
+                if sighaItem
+                else None
+            ),
+            isLoan=(
+                sighaItem["isLoan"]
+                if sighaItem
+                else None
+            ),
+            sighaDocumentNumber=(
+                sighaItem["documentNumber"]
+                if sighaItem
+                else None
+            ),
+            sighaFullName=(
+                sighaItem["fullName"]
+                if sighaItem
+                else None
+            ),
+            conceptName=(
+                sighaItem["conceptName"]
+                if sighaItem
+                else None
+            ),
+            lastDiscountDate=(
+                sighaItem["lastDiscountDate"]
+                if sighaItem
+                else None
+            ),
+            sighaAmount=sighaAmount,
+            difference=difference,
+        )
+
+    def _groupReconciliationByConcept(self, items: list[LoanReconciliationItemDto],) -> list[LoanReconciliationGroupDto]:
+        grouped: dict[str, list[LoanReconciliationItemDto]] = {}
+
+        for item in items:
+
+            conceptName = (
+                item.conceptName.strip()
+                if item.conceptName
+                else "SIN COINCIDENCIA EN SIGHA"
+            )
+
+            if conceptName not in grouped:
+                grouped[conceptName] = []
+
+            grouped[conceptName].append(item)
+
+        result: list[LoanReconciliationGroupDto] = []
+
+        concepts = sorted(
+            [
+                concept
+                for concept in grouped.keys()
+                if (concept != "SIN COINCIDENCIA EN SIGHA")
+            ],
+            key=lambda value: (value.lower()),
+        )
+
+        if "SIN COINCIDENCIA EN SIGHA" in grouped:
+            concepts.append("SIN COINCIDENCIA EN SIGHA")
+
+        for conceptName in concepts:
+            conceptItems = grouped[conceptName]
+            conceptItems.sort(
+                key=lambda item: (
+                    item.fileDocumentNumber
+                    or item.sighaDocumentNumber
+                    or "",
+                    item.fileAmount
+                    if item.fileAmount
+                    is not None
+                    else Decimal("0"),
+                )
+            )
+
+            result.append(
+                LoanReconciliationGroupDto(
+                    conceptName=conceptName,
+                    total=len(conceptItems),
+                    equals=sum(
+                        1
+                        for item
+                        in conceptItems
+                        if (item.status == "IGUAL")
+                    ),
+                    different=sum(
+                        1
+                        for item
+                        in conceptItems
+                        if (item.status == "DIFERENTE")
+                    ),
+                    notInFile=sum(
+                        1
+                        for item
+                        in conceptItems
+                        if (item.status == "NO_EN_ARCHIVO")
+                    ),
+                    notInSigha=sum(
+                        1
+                        for item
+                        in conceptItems
+                        if (item.status == "NO_EN_SIGHA")
+                    ),
+                    items=conceptItems,
+                )
+            )
+
+        return result
 
     def create(self, loanData: LoanCreateDto) -> LoanDto:
         self._validateCreate(loanData)

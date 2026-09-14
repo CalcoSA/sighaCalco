@@ -14,5 +14,9 @@ class IServiceDiscountHistoryRepository(ABC):
         pass
 
     @abstractmethod
+    def getLatestByLoanIds(self, IdLoans: list[int],) -> dict[int, ServiceDiscountHistory]:
+        pass
+
+    @abstractmethod
     def create(self, historyData: ServiceDiscountHistory) -> ServiceDiscountHistory:
         pass

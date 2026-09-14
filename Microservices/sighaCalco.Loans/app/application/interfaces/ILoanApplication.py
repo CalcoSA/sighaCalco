@@ -1,4 +1,5 @@
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
+from app.domain.dtos.LoanReconciliationDto import LoanReconciliationResultDto
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.common.pagination import PaginationParams, PaginatedResult
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
@@ -14,6 +15,10 @@ class ILoanApplication(ABC):
 
     @abstractmethod
     def getReport(self, dateFrom: date, dateTo: date) -> List[LoanReportDto]:
+        pass
+
+    @abstractmethod
+    def getReconciliation(self, fileContent: bytes,) -> LoanReconciliationResultDto:
         pass
 
     @abstractmethod
