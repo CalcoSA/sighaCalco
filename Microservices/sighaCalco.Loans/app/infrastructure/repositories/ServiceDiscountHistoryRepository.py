@@ -3,6 +3,7 @@ from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.common.pagination import PaginationParams, PaginatedResult
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
 from datetime import date
 from math import ceil
 
@@ -35,6 +36,37 @@ class ServiceDiscountHistoryRepository(IServiceDiscountHistoryRepository):
         
         except SQLAlchemyError as e:
             raise Exception("Error validando el histórico de descuentos: " f"{str(e)}")
+
+    def getLatestByLoanIds(self, IdLoans: list[int],) -> dict[int, ServiceDiscountHistory]:
+
+        if not IdLoans:
+            return {}
+
+        latestSubquery = (
+            self.db.query(ServiceDiscountHistory.IdLoan, func.max(ServiceDiscountHistory.discountDate).label("latestDiscountDate"),)
+            .filter(ServiceDiscountHistory.IdLoan.in_(IdLoans))
+            .group_by(ServiceDiscountHistory.IdLoan)
+            .subquery()
+        )
+
+        records = (
+            self.db.query(ServiceDiscountHistory)
+            .join(
+                latestSubquery,
+                and_(
+                    ServiceDiscountHistory.IdLoan
+                    == latestSubquery.c.IdLoan,
+                    ServiceDiscountHistory.discountDate
+                    == latestSubquery.c.latestDiscountDate,
+                ),
+            )
+            .all()
+        )
+
+        return {
+            record.IdLoan: record
+            for record in records
+        }
 
     def create(self, historyData: ServiceDiscountHistory) -> ServiceDiscountHistory:
         try:

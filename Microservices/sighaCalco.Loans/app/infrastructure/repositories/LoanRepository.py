@@ -61,6 +61,19 @@ class LoanRepository(ILoanRepository):
 
             raise Exception("Error obteniendo el reporte de préstamos " f"y emolumentos: {str(e)}")
 
+    def getActiveForReconciliation(self) -> List[Loan]:
+        try:
+            return (
+                self.db.query(Loan)
+                .options(selectinload(Loan.loanInstallments))
+                .filter(Loan.IdLoanStatus == 1)
+                .order_by(Loan.employeeDocumentNumber.asc(), Loan.conceptName.asc(), Loan.IdLoan.asc(),)
+                .all()
+            )
+
+        except SQLAlchemyError as e:
+            raise Exception("Error consultando préstamos y emolumentos " f"activos para conciliación: {str(e)}")
+
     def create(self, loanData: Loan) -> Loan:
         try:
             nowColombia = self._nowColombia()

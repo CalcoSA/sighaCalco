@@ -3,6 +3,7 @@ from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanR
 from app.infrastructure.repositories.LoanStatusHistoryRepository import LoanStatusHistoryRepository
 from app.infrastructure.repositories.LoanStatusRepository import LoanStatusRepository
 from app.infrastructure.repositories.LoanLogRepository import LoanLogRepository
+from app.domain.dtos.LoanReconciliationDto import LoanReconciliationResultDto
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.infrastructure.repositories.LoanRepository import LoanRepository
 from app.application.interfaces.ILoanApplication import ILoanApplication
@@ -13,6 +14,7 @@ from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
 from app.common.pagination import PaginationParams
 from app.infrastructure.db.connection import getDb
 from app.common.ApiResponse import apiResponse
+from fastapi import UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import date
@@ -71,6 +73,34 @@ def getLoanReport(dateFrom: date = Query(...), dateTo: date = Query(...), servic
     except Exception:
         logger.exception("Error inesperado generando reporte | dateFrom=%s | dateTo=%s", dateFrom, dateTo)
         raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al generar el reporte de préstamos y emolumentos."))
+
+@router.post("/reconciliation", response_model=apiResponse[LoanReconciliationResultDto],)
+async def getReconciliationLoans(file: UploadFile = File(...), service: ILoanApplication = Depends(getLoanApplication),):
+    try:
+        fileName = file.filename or "".lower()
+
+        if not fileName.endswith(".xlsx") or fileName.endswith(".xlsm"):
+            raise ValueError("El archivo debe ser un Excel con extensión .xlsx o .xlsm.")
+
+        content = await file.read()
+
+        if not content:
+            raise ValueError("El archivo está vacío.")
+
+        maxFileSize = (10 * 1024 * 1024)
+
+        if len(content) > maxFileSize:
+            raise ValueError("El archivo no puede superar los 10 MB.")
+
+        data = service.getReconciliation(fileContent=content)
+        return apiResponse(isSuccess=True, Message=("Conciliación realizada correctamente."), result=data,)
+
+    except ValueError as exception:
+        raise HTTPException(status_code=(status.HTTP_400_BAD_REQUEST), detail=str(exception),)
+
+    except Exception:
+        logger.exception("Error realizando conciliación.")
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error realizando la conciliación."),)
 
 @router.post("/", response_model=apiResponse[LoanDto], status_code=status.HTTP_201_CREATED)
 def createLoan(loanData: LoanCreateDto, service: ILoanApplication = Depends(getLoanApplication)):
