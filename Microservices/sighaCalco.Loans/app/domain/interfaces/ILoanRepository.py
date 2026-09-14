@@ -32,6 +32,10 @@ class ILoanRepository(ABC):
         pass
 
     @abstractmethod
+    def getActiveForReconciliation(self) -> List[Loan]:
+        pass
+
+    @abstractmethod
     def create(self, loanData: Loan) -> Loan:
         pass
 
