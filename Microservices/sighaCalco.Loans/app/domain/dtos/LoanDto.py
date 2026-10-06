@@ -82,6 +82,8 @@ class LoanReportDto(BaseModel):
 class LoanEditDto(BaseModel):
     loanAmount: Decimal = Field(..., gt=0)
     numberInstallments: int = Field(..., ge=1)
+    IdDeductionPlan: int = Field(..., ge=1)
+    deductionPlanName: str = Field(..., min_length=1, max_length=150,)
     endDiscountDate: Optional[date] = None
     observation: Optional[str] = Field(None, max_length=2000,)
     updatedByUserName: str = Field(..., min_length=1, max_length=250,)

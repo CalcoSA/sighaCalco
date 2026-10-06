@@ -2,11 +2,16 @@ from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.common.pagination import PaginationParams, PaginatedResult
 from abc import ABC, abstractmethod
 from datetime import date
+from typing import List
 
 class IServiceDiscountHistoryRepository(ABC):
 
     @abstractmethod
     def getByIdLoan(self, IdLoan: int, pagination: PaginationParams) -> PaginatedResult[ServiceDiscountHistory]:
+        pass
+
+    @abstractmethod
+    def getByLoanIds(self, IdLoans: List[int],) -> List[ServiceDiscountHistory]:
         pass
 
     @abstractmethod
