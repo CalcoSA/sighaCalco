@@ -3,6 +3,7 @@ from app.domain.dtos.LoanReconciliationDto import LoanReconciliationResultDto
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.common.pagination import PaginationParams, PaginatedResult
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanExportDto import LoanExportDto
 from abc import ABC, abstractmethod
 from typing import Optional, List
 from datetime import date
@@ -10,7 +11,11 @@ from datetime import date
 class ILoanApplication(ABC):
 
     @abstractmethod
-    async def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
+    async def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
+        pass
+
+    @abstractmethod
+    def getAllForExport(self, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None,) -> List[LoanExportDto]:
         pass
 
     @abstractmethod

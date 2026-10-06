@@ -14,6 +14,7 @@ from app.domain.entities.loanStatusHistory import LoanStatusHistory
 from app.domain.interfaces.ILoanRepository import ILoanRepository
 from app.domain.entities.loanInstallment import LoanInstallment
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanExportDto import LoanExportDto
 from app.domain.entities.loanLog import LoanLog
 from sqlalchemy.exc import SQLAlchemyError
 from app.domain.entities.loan import Loan
@@ -35,8 +36,8 @@ class LoanApplication(ILoanApplication):
     def _nowColombia(self) -> datetime:
         return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
 
-    async def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
-        data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+    async def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[LoanDto]:
+        data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, IdConcept=IdConcept, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
 
         if not data.items:
             return PaginatedResult(items=[], total=data.total, page=data.page, pageSize=data.pageSize, totalPages=data.totalPages,)
@@ -44,9 +45,128 @@ class LoanApplication(ILoanApplication):
         wasModified = await self._validateBukStatus(loans=data.items)
 
         if wasModified:
-            data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+            data = self.loanRepository.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, IdConcept=IdConcept, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
 
         return PaginatedResult(items=[self._toDto(item) for item in data.items], total=data.total, page=data.page, pageSize=data.pageSize, totalPages=data.totalPages,)
+
+    def getAllForExport(self, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None,) -> List[LoanExportDto]:
+
+        loans = (
+            self.loanRepository.getAllForExport(
+                employeeDocumentNumber=employeeDocumentNumber,
+                IdLoanStatus=IdLoanStatus,
+                IdConcept=IdConcept,
+                requestDateFrom=requestDateFrom,
+                requestDateTo=requestDateTo,
+            )
+        )
+
+        if not loans:
+            return []
+
+        serviceLoanIds = [
+            loan.IdLoan
+            for loan in loans
+            if not loan.isLoan
+        ]
+
+        serviceHistories = (self.serviceDiscountHistoryRepository.getByLoanIds(IdLoans=serviceLoanIds))
+        historiesByLoan: dict[int, list] = {}
+
+        for history in serviceHistories:
+
+            if history.IdLoan not in historiesByLoan:
+                historiesByLoan[history.IdLoan] = []
+
+            historiesByLoan[history.IdLoan].append(history)
+
+        result: List[LoanExportDto] = []
+
+        for loan in loans:
+
+            baseData = {
+                "IdLoan": loan.IdLoan,
+                "employeeDocumentNumber": loan.employeeDocumentNumber,
+                "employeeFullName": loan.employeeFullName,
+                "employeeRoleName": loan.employeeRoleName,
+                "employeeCostCenterName": loan.employeeCostCenterName,
+                "isLoan": loan.isLoan,
+                "crossDocument": loan.crossDocument,
+                "conceptName": loan.conceptName,
+                "deductionPlanName": loan.deductionPlanName,
+                "loanStatusName": loan.loanStatusName,
+                "loanAmount": loan.loanAmount,
+                "serviceValue": loan.serviceValue,
+                "numberInstallments": loan.numberInstallments,
+                "paidInstallments": loan.paidInstallments,
+                "remainingAmount": loan.remainingAmount,
+                "requestDate": loan.requestDate,
+                "startDiscountDate": loan.startDiscountDate,
+                "endDiscountDate": loan.endDiscountDate,
+            }
+
+            if loan.isLoan:
+
+                installments = sorted(loan.loanInstallments, key=lambda item: item.installmentNumber,)
+
+                if installments:
+
+                    for installment in installments:
+
+                        result.append(
+                            LoanExportDto(
+                                **baseData,
+                                installmentNumber=(installment.installmentNumber),
+                                installmentValue=(installment.installmentValue),
+                                isPaid=(installment.isPaid),
+                                commitmentDate=(installment.commitmentDate),
+                                paymentDate=(installment.paymentDate),
+                                serviceDiscountValue=None,
+                                serviceDiscountDate=None,
+                            )
+                        )
+
+                else:
+
+                    result.append(LoanExportDto(**baseData))
+
+                continue
+
+            histories = (historiesByLoan.get(loan.IdLoan, []))
+
+            if histories:
+
+                for history in histories:
+
+                    result.append(
+                        LoanExportDto(
+                            **baseData,
+                            installmentNumber=None,
+                            installmentValue=None,
+                            isPaid=None,
+                            commitmentDate=None,
+                            paymentDate=None,
+                            serviceDiscountValue=(history.discountValue),
+                            serviceDiscountDate=(history.discountDate),
+                        )
+                    )
+
+            else:
+
+                result.append(
+                    LoanExportDto(
+                        **baseData,
+                        installmentNumber=None,
+                        installmentValue=None,
+                        isPaid=None,
+                        commitmentDate=None,
+                        paymentDate=None,
+                        serviceDiscountValue=None,
+                        serviceDiscountDate=None,
+                    )
+                )
+
+        return result
 
     async def _validateBukStatus(self, loans: list[Loan]) -> bool:
         bukEmployeeClient = BukEmployeeClient()
@@ -324,6 +444,7 @@ class LoanApplication(ILoanApplication):
                     "isLoan": loan.isLoan,
                     "documentNumber": documentNumber,
                     "fullName": loan.employeeFullName,
+                    "IdConcept": loan.IdConcept,
                     "conceptName": loan.conceptName,
                     "lastDiscountDate": lastDiscountDate,
                     "amount": (amount.quantize(Decimal("0.01"))
@@ -372,54 +493,57 @@ class LoanApplication(ILoanApplication):
             if character.isdigit()
         )
 
+    def _normalizeConceptForReconciliation(self, value: str | None,) -> str:
+
+        if not value:
+            return ""
+
+        return " ".join(value.strip().upper().split())
+
     def _matchReconciliation(self, sighaRecords: list[dict], fileRecords: list[dict],) -> list[LoanReconciliationItemDto]:
         result: list[LoanReconciliationItemDto] = []
+        keys: set[tuple[str, str]] = set()
 
-        documents = {
-            item["documentNumber"]
-            for item in sighaRecords
-        }
+        for item in sighaRecords:
 
-        documents.update(
-            item["documentNumber"]
-            for item in fileRecords
-        )
+            keys.add((item["documentNumber"], self._normalizeConceptForReconciliation(item.get("conceptName")),))
 
-        for documentNumber in sorted(documents):
+        for item in fileRecords:
+
+            keys.add((item["documentNumber"], self._normalizeConceptForReconciliation(item.get("conceptName")),))
+
+        for documentNumber, conceptName in sorted(keys):
+
             sighaGroup = [
                 item
                 for item in sighaRecords
-                if item["documentNumber"] == documentNumber
+                if (item["documentNumber"] == documentNumber and self._normalizeConceptForReconciliation(item.get("conceptName")) == conceptName)
             ]
 
             fileGroup = [
                 item
                 for item in fileRecords
-                if item["documentNumber"] == documentNumber
+                if (item["documentNumber"] == documentNumber and self._normalizeConceptForReconciliation(item.get("conceptName")) == conceptName)
             ]
 
             usedSigha: set[int] = set()
             usedFile: set[int] = set()
 
-            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+            for sighaIndex, sighaItem in enumerate(sighaGroup):
+
                 if sighaItem["amount"] is None:
                     continue
 
-                for (fileIndex, fileItem,) in enumerate(fileGroup):
+                for fileIndex, fileItem in enumerate(fileGroup):
+
                     if fileIndex in usedFile:
                         continue
 
-                    difference = fileItem["amount"] - sighaItem["amount"]
+                    difference = (fileItem["amount"] - sighaItem["amount"])
 
                     if abs(difference) <= Decimal("0.01"):
-                        result.append(
-                            self._buildReconciliationItem(
-                                sighaItem=(sighaItem),
-                                fileItem=(fileItem),
-                                status="IGUAL",
-                            )
-                        )
 
+                        result.append(self._buildReconciliationItem(sighaItem=sighaItem, fileItem=fileItem, status="IGUAL",))
                         usedSigha.add(sighaIndex)
                         usedFile.add(fileIndex)
 
@@ -427,23 +551,26 @@ class LoanApplication(ILoanApplication):
 
             possiblePairs = []
 
-            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+            for sighaIndex, sighaItem in enumerate(sighaGroup):
+
                 if sighaIndex in usedSigha:
                     continue
 
                 if sighaItem["amount"] is None:
                     continue
 
-                for (fileIndex, fileItem,) in enumerate(fileGroup):
+                for fileIndex, fileItem in enumerate(fileGroup):
+
                     if fileIndex in usedFile:
                         continue
 
                     difference = abs(fileItem["amount"] - sighaItem["amount"])
-                    possiblePairs.append(difference, sighaIndex, fileIndex,)
+                    possiblePairs.append((difference, sighaIndex, fileIndex,))
 
-            possiblePairs.sort(key=lambda item: (item[0], item[1], item[2],))
+            possiblePairs.sort(key=lambda item: ( item[0], item[1], item[2], ))
 
-            for (_, sighaIndex, fileIndex,) in possiblePairs:
+            for _, sighaIndex, fileIndex in possiblePairs:
+
                 if sighaIndex in usedSigha:
                     continue
 
@@ -461,29 +588,19 @@ class LoanApplication(ILoanApplication):
                 usedSigha.add(sighaIndex)
                 usedFile.add(fileIndex)
 
-            for (sighaIndex, sighaItem,) in enumerate(sighaGroup):
+            for sighaIndex, sighaItem in enumerate(sighaGroup):
+
                 if sighaIndex in usedSigha:
                     continue
 
-                result.append(
-                    self._buildReconciliationItem(
-                        sighaItem=sighaItem,
-                        fileItem=None,
-                        status="NO_EN_ARCHIVO",
-                    )
-                )
+                result.append(self._buildReconciliationItem(sighaItem=sighaItem, fileItem=None, status="NO_EN_ARCHIVO",))
 
-            for (fileIndex, fileItem,) in enumerate(fileGroup):
+            for fileIndex, fileItem in enumerate(fileGroup):
+
                 if fileIndex in usedFile:
                     continue
 
-                result.append(
-                    self._buildReconciliationItem(
-                        sighaItem=None,
-                        fileItem=fileItem,
-                        status="NO_EN_SIGHA",
-                    )
-                )
+                result.append(self._buildReconciliationItem(sighaItem=None, fileItem=fileItem, status="NO_EN_SIGHA",))
 
         return result
 
@@ -493,100 +610,131 @@ class LoanApplication(ILoanApplication):
             if sighaItem
             else None
         )
+
         fileAmount = (
             fileItem["amount"]
             if fileItem
             else None
         )
+
         difference = None
 
-        if sighaAmount is not None and fileAmount is not None:
+        if (sighaAmount is not None and fileAmount is not None):
             difference = (fileAmount - sighaAmount).quantize(Decimal("0.01"))
 
         return LoanReconciliationItemDto(
             status=status,
+
             fileDocumentNumber=(
                 fileItem["documentNumber"]
                 if fileItem
                 else None
             ),
+
             fileFullName=(
                 fileItem["fullName"]
                 if fileItem
                 else None
             ),
+
+            fileConceptName=(
+                fileItem.get("conceptName")
+                if fileItem
+                else None
+            ),
+
             fileAmount=fileAmount,
+
             IdLoan=(
                 sighaItem["IdLoan"]
                 if sighaItem
                 else None
             ),
+
             isLoan=(
                 sighaItem["isLoan"]
                 if sighaItem
                 else None
             ),
+
             sighaDocumentNumber=(
                 sighaItem["documentNumber"]
                 if sighaItem
                 else None
             ),
+
             sighaFullName=(
                 sighaItem["fullName"]
                 if sighaItem
                 else None
             ),
+
+            IdConcept=(
+                sighaItem["IdConcept"]
+                if sighaItem
+                else None
+            ),
+
             conceptName=(
                 sighaItem["conceptName"]
                 if sighaItem
                 else None
             ),
+
             lastDiscountDate=(
                 sighaItem["lastDiscountDate"]
                 if sighaItem
                 else None
             ),
+
             sighaAmount=sighaAmount,
+
             difference=difference,
         )
 
     def _groupReconciliationByConcept(self, items: list[LoanReconciliationItemDto],) -> list[LoanReconciliationGroupDto]:
-        grouped: dict[str, list[LoanReconciliationItemDto]] = {}
+        grouped: dict[tuple[Optional[int], str], list[LoanReconciliationItemDto]] = {}
 
         for item in items:
 
             conceptName = (
                 item.conceptName.strip()
                 if item.conceptName
-                else "SIN COINCIDENCIA EN SIGHA"
+                else (item.fileConceptName.strip()
+                    if item.fileConceptName
+                    else "SIN CONCEPTO"
+                )
             )
 
-            if conceptName not in grouped:
-                grouped[conceptName] = []
+            groupKey = (item.IdConcept, conceptName,)
 
-            grouped[conceptName].append(item)
+            if groupKey not in grouped:
+                grouped[groupKey] = []
+
+            grouped[groupKey].append(item)
 
         result: list[LoanReconciliationGroupDto] = []
 
-        concepts = sorted(
-            [
-                concept
-                for concept in grouped.keys()
-                if (concept != "SIN COINCIDENCIA EN SIGHA")
-            ],
-            key=lambda value: (value.lower()),
+        groupKeys = sorted(
+            grouped.keys(),
+            key=lambda value: (
+                value[1].lower(),
+                value[0]
+                if value[0] is not None
+                else 0,
+            ),
         )
 
-        if "SIN COINCIDENCIA EN SIGHA" in grouped:
-            concepts.append("SIN COINCIDENCIA EN SIGHA")
+        for IdConcept, conceptName in groupKeys:
 
-        for conceptName in concepts:
-            conceptItems = grouped[conceptName]
+            conceptItems = (grouped[(IdConcept, conceptName,)])
+
             conceptItems.sort(
                 key=lambda item: (
                     item.fileDocumentNumber
                     or item.sighaDocumentNumber
                     or "",
+
                     item.fileAmount
                     if item.fileAmount
                     is not None
@@ -596,32 +744,42 @@ class LoanApplication(ILoanApplication):
 
             result.append(
                 LoanReconciliationGroupDto(
+                    IdConcept=IdConcept,
                     conceptName=conceptName,
                     total=len(conceptItems),
+                    
                     equals=sum(
                         1
                         for item
                         in conceptItems
-                        if (item.status == "IGUAL")
+                        if item.status
+                        == "IGUAL"
                     ),
+
                     different=sum(
                         1
                         for item
                         in conceptItems
-                        if (item.status == "DIFERENTE")
+                        if item.status
+                        == "DIFERENTE"
                     ),
+
                     notInFile=sum(
                         1
                         for item
                         in conceptItems
-                        if (item.status == "NO_EN_ARCHIVO")
+                        if item.status
+                        == "NO_EN_ARCHIVO"
                     ),
+
                     notInSigha=sum(
                         1
                         for item
                         in conceptItems
-                        if (item.status == "NO_EN_SIGHA")
+                        if item.status
+                        == "NO_EN_SIGHA"
                     ),
+
                     items=conceptItems,
                 )
             )
@@ -945,7 +1103,7 @@ class LoanApplication(ILoanApplication):
 
             raise Exception("Error al actualizar el estado del " f"préstamo: {str(exception)}") from exception
 
-    def updateLoan(self, IdLoan: int, loanData: LoanEditDto) -> LoanDto:
+    def updateLoan(self, IdLoan: int, loanData: LoanEditDto,) -> LoanDto:
         updatedByUserName = loanData.updatedByUserName.strip()
 
         if not updatedByUserName:
@@ -971,66 +1129,110 @@ class LoanApplication(ILoanApplication):
 
             if loanData.numberInstallments <= 0:
                 raise ValueError("El número de cuotas debe ser mayor a cero.")
+            
+            deductionPlanName = (loanData.deductionPlanName.strip())
 
-            if (loanData.endDiscountDate and loanData.endDiscountDate < loanFound.startDiscountDate):
-                raise ValueError("La fecha final del descuento no puede ser menor a la fecha inicial.")
+            if loanData.IdDeductionPlan <= 0:
+                raise ValueError("El plan de deducción es obligatorio.")
+
+            if not deductionPlanName:
+                raise ValueError("El nombre del plan de deducción es obligatorio.")
+
+            normalizedDeductionPlanName = (deductionPlanName.lower())
+
+            validDeductionPlans = {
+                "primera quincena",
+                "segunda quincena",
+                "ambas quincenas",
+            }
+
+            if (normalizedDeductionPlanName not in validDeductionPlans):
+                raise ValueError("El plan de deducción seleccionado no es válido.")
+            
+            previousLoanAmount = (loanFound.loanAmount)
+            previousNumberInstallments = (loanFound.numberInstallments)
+            previousEndDiscountDate = (loanFound.endDiscountDate)
+            previousDeductionPlanId = (loanFound.IdDeductionPlan)
+            previousDeductionPlanName = (loanFound.deductionPlanName)
+
+            planChanged = (previousDeductionPlanId != loanData.IdDeductionPlan or previousDeductionPlanName.strip().lower() != normalizedDeductionPlanName)
+            installmentCountChanged = (previousNumberInstallments != loanData.numberInstallments)
+            scheduleChanged = (planChanged or installmentCountChanged)
 
             paidInstallments = sorted(
                 [
                     installment
-                    for installment in loanFound.loanInstallments
+                    for installment
+                    in loanFound.loanInstallments
                     if installment.isPaid
                 ],
                 key=lambda installment: installment.installmentNumber,
             )
 
-            currentPendingInstallments = [
-                installment
-                for installment in loanFound.loanInstallments
-                if not installment.isPaid
-            ]
+            currentPendingInstallments = sorted(
+                [
+                    installment
+                    for installment
+                    in loanFound.loanInstallments
+                    if not installment.isPaid
+                ],
+                key=lambda installment: installment.installmentNumber,
+            )
 
             paidCount = len(paidInstallments)
 
-            if loanData.numberInstallments < paidCount:
+            if (loanData.numberInstallments < paidCount):
                 raise ValueError("El número de cuotas no puede ser menor a la cantidad de cuotas que ya se encuentran pagadas.")
 
             expectedPendingCount = (loanData.numberInstallments - paidCount)
 
-            if (len(loanData.loanInstallments) != expectedPendingCount):
+            pendingInstallmentsData = sorted(loanData.loanInstallments, key=lambda installment: installment.installmentNumber,)
+
+            if (len(pendingInstallmentsData) != expectedPendingCount):
                 raise ValueError("La cantidad de cuotas pendientes enviada no coincide con el nuevo número total de cuotas.")
 
             allInstallmentsById = {
                 installment.IdLoanInstallment: installment
-                for installment in loanFound.loanInstallments
+                for installment
+                in loanFound.loanInstallments
             }
 
             pendingById = {
                 installment.IdLoanInstallment: installment
-                for installment in currentPendingInstallments
+                for installment
+                in currentPendingInstallments
             }
 
             receivedIds = [
                 installment.IdLoanInstallment
-                for installment in loanData.loanInstallments
-                if installment.IdLoanInstallment is not None
+                for installment
+                in pendingInstallmentsData
+                if installment.IdLoanInstallment
+                is not None
             ]
 
-            if len(receivedIds) != len(set(receivedIds)):
+            if (len(receivedIds) != len(set(receivedIds))):
                 raise ValueError("Existen cuotas pendientes repetidas en la actualización.")
 
             for IdLoanInstallment in receivedIds:
+
                 existingInstallment = (allInstallmentsById.get(IdLoanInstallment))
 
                 if not existingInstallment:
                     raise ValueError(f"La cuota {IdLoanInstallment} no pertenece al préstamo.")
 
                 if existingInstallment.isPaid:
-                    raise ValueError(f"La cuota número " f"{existingInstallment.installmentNumber} ya se encuentra pagada y no puede modificarse.")
+                    raise ValueError(
+                        f"La cuota número "
+                        f"{existingInstallment.installmentNumber} "
+                        "ya se encuentra pagada y "
+                        "no puede modificarse."
+                    )
 
             pendingNumbers = [
                 installment.installmentNumber
-                for installment in loanData.loanInstallments
+                for installment
+                in pendingInstallmentsData
             ]
 
             if (len(pendingNumbers) != len(set(pendingNumbers))):
@@ -1038,7 +1240,8 @@ class LoanApplication(ILoanApplication):
 
             paidNumbers = {
                 installment.installmentNumber
-                for installment in paidInstallments
+                for installment
+                in paidInstallments
             }
 
             if paidNumbers.intersection(pendingNumbers):
@@ -1049,11 +1252,12 @@ class LoanApplication(ILoanApplication):
 
             if (allInstallmentNumbers != expectedInstallmentNumbers):
                 raise ValueError("La numeración de las cuotas debe ser consecutiva desde 1 hasta el número total de cuotas.")
-
+            
             paidTotal = sum(
                 (
                     installment.installmentValue
-                    for installment in paidInstallments
+                    for installment
+                    in paidInstallments
                 ),
                 Decimal("0"),
             )
@@ -1062,113 +1266,170 @@ class LoanApplication(ILoanApplication):
                 (
                     installment.installmentValue
                     for installment
-                    in loanData.loanInstallments
+                    in pendingInstallmentsData
                 ),
                 Decimal("0"),
             )
 
             totalInstallments = (paidTotal + pendingTotal).quantize(Decimal("0.01"))
-            loanAmount = loanData.loanAmount.quantize(Decimal("0.01"))
+            loanAmount = (loanData.loanAmount.quantize(Decimal("0.01")))
 
             if totalInstallments != loanAmount:
                 raise ValueError("La suma de las cuotas pagadas y pendientes debe ser igual al nuevo valor del préstamo.")
 
-            commitmentDates = [
-                installment.commitmentDate
-                for installment in paidInstallments
-            ]
-
-            commitmentDates.extend(
+            pendingCommitmentDates = [
                 installment.commitmentDate
                 for installment
-                in loanData.loanInstallments
+                in pendingInstallmentsData
+            ]
+
+            effectiveEndDiscountDate = (
+                loanData.endDiscountDate
+                if loanData.endDiscountDate is not None
+                else loanFound.endDiscountDate
             )
 
-            if (loanData.endDiscountDate and commitmentDates and max(commitmentDates) > loanData.endDiscountDate):
+            if scheduleChanged:
+
+                anchorDate = (
+                    currentPendingInstallments[0].commitmentDate
+                    if currentPendingInstallments
+                    else loanFound.startDiscountDate
+                )
+
+                pendingCommitmentDates = (
+                    self._calculateCommitmentDates(
+                        startDate=anchorDate,
+                        numberInstallments=(expectedPendingCount),
+                        deductionPlanName=(normalizedDeductionPlanName),
+                    )
+                )
+
+                allCommitmentDates = [
+                    installment.commitmentDate
+                    for installment
+                    in paidInstallments
+                ]
+
+                allCommitmentDates.extend(pendingCommitmentDates)
+
+                effectiveEndDiscountDate = (
+                    max(allCommitmentDates)
+                    if allCommitmentDates
+                    else None
+                )
+
+            if (effectiveEndDiscountDate and effectiveEndDiscountDate < loanFound.startDiscountDate):
+                raise ValueError("La fecha final del descuento no puede ser menor a la fecha inicial.")
+
+            commitmentDates = [
+                installment.commitmentDate
+                for installment
+                in paidInstallments
+            ]
+
+            commitmentDates.extend(pendingCommitmentDates)
+
+            if (effectiveEndDiscountDate and commitmentDates and max(commitmentDates) > effectiveEndDiscountDate):
                 raise ValueError("Existen cuotas con fecha compromiso posterior a la fecha final del descuento.")
 
-            previousLoanAmount = loanFound.loanAmount
-            previousNumberInstallments = (loanFound.numberInstallments)
-            previousEndDiscountDate = (loanFound.endDiscountDate)
             newPendingInstallments: list[LoanInstallment] = []
 
-            for installmentData in loanData.loanInstallments:
+            for index, installmentData in enumerate(pendingInstallmentsData):
+
+                commitmentDate = (pendingCommitmentDates[index])
 
                 if (installmentData.IdLoanInstallment is not None):
-                    installment = pendingById.get(installmentData.IdLoanInstallment)
+
+                    installment = (pendingById.get(installmentData.IdLoanInstallment))
 
                     if not installment:
                         raise ValueError("La cuota pendiente indicada no pertenece al préstamo.")
 
                     installment.installmentNumber = (installmentData.installmentNumber)
                     installment.installmentValue = (installmentData.installmentValue)
-                    installment.commitmentDate = (installmentData.commitmentDate)
+                    installment.commitmentDate = (commitmentDate)
                     installment.isPaid = False
                     installment.paymentDate = None
                     newPendingInstallments.append(installment)
 
                 else:
+
                     newPendingInstallments.append(
                         LoanInstallment(
                             installmentNumber=(installmentData.installmentNumber),
                             installmentValue=(installmentData.installmentValue),
                             isPaid=False,
-                            commitmentDate=(installmentData.commitmentDate),
+                            commitmentDate=(commitmentDate),
                             paymentDate=None,
                         )
                     )
 
             loanFound.loanInstallments = (paidInstallments + newPendingInstallments)
-            remainingAmount = pendingTotal.quantize( Decimal("0.01"))
-            nowColombia = self._nowColombia()
-            loanFound.observation = self._appendObservation(
-                currentObservation=loanFound.observation,
-                newObservation=loanData.observation,
-                updateDate=nowColombia,
+
+            remainingAmount = (pendingTotal.quantize(Decimal("0.01")))
+            nowColombia = (self._nowColombia())
+
+            loanFound.observation = (
+                self._appendObservation(
+                    currentObservation=(loanFound.observation),
+                    newObservation=(loanData.observation),
+                    updateDate=nowColombia,
+                )
             )
-            updatedLoan = self.loanRepository.updateLoan(
-                loanData=loanFound,
-                loanAmount=loanAmount,
-                numberInstallments=(loanData.numberInstallments),
-                paidInstallments=paidCount,
-                remainingAmount=remainingAmount,
-                endDiscountDate=(loanData.endDiscountDate),
-                updatedByUserName=updatedByUserName,
-                updatedAt=nowColombia,
+
+            updatedLoan = (
+                self.loanRepository.updateLoan(
+                    loanData=loanFound,
+                    loanAmount=loanAmount,
+                    numberInstallments=(loanData.numberInstallments),
+                    paidInstallments=paidCount,
+                    remainingAmount=(remainingAmount),
+                    IdDeductionPlan=(loanData.IdDeductionPlan),
+                    deductionPlanName=(deductionPlanName),
+                    endDiscountDate=(effectiveEndDiscountDate),
+                    updatedByUserName=(updatedByUserName),
+                    updatedAt=nowColombia,
+                )
             )
 
             self.loanLogRepository.add(
                 LoanLog(
-                    actionType="Actualización de préstamo",
+                    actionType=("Actualización de préstamo"),
                     IdLoan=updatedLoan.IdLoan,
                     IdLoanInstallment=None,
                     installmentNumber=None,
                     employeeDocumentNumber=(updatedLoan.employeeDocumentNumber),
-                    conceptName=updatedLoan.conceptName,
-                    loanStatusName=updatedLoan.loanStatusName,
+                    conceptName=(updatedLoan.conceptName),
+                    loanStatusName=(updatedLoan.loanStatusName),
                     installmentStatusName=None,
                     observation=(
-                        "Se actualizó la información del préstamo. "
+                        "Se actualizó la información "
+                        "del préstamo. "
                         f"Valor: {previousLoanAmount} "
                         f"a {updatedLoan.loanAmount}. "
                         f"Número de cuotas: "
                         f"{previousNumberInstallments} "
                         f"a {updatedLoan.numberInstallments}. "
+                        f"Plan de descuento: "
+                        f"{previousDeductionPlanName} "
+                        f"a {updatedLoan.deductionPlanName}. "
                         f"Fecha final: "
                         f"{previousEndDiscountDate} "
                         f"a {updatedLoan.endDiscountDate}. "
                         f"Se conservaron {paidCount} "
-                        "cuotas pagadas sin modificación y "
-                        f"se actualizaron "
+                        "cuotas pagadas sin modificación "
+                        "y se actualizaron "
                         f"{len(newPendingInstallments)} "
                         "cuotas pendientes."
                     ),
-                    actorUserName=updatedByUserName,
+                    actorUserName=(updatedByUserName),
                 )
             )
 
             self.loanRepository.commit()
-            refreshedLoan = self.loanRepository.getById(IdLoan)
+
+            refreshedLoan = (self.loanRepository.getById(IdLoan))
 
             if not refreshedLoan:
                 raise Exception("No fue posible recuperar el préstamo actualizado.")

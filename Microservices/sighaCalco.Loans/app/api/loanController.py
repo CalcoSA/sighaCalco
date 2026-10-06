@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.application.services.LoanApplication import LoanApplication
 from app.infrastructure.logging.loggerConfig import getLogger
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanExportDto import LoanExportDto
 from app.common.pagination import PaginationParams
 from app.infrastructure.db.connection import getDb
 from app.common.ApiResponse import apiResponse
@@ -38,10 +39,10 @@ def getLoanApplication(db: Session = Depends(getDb)) -> ILoanApplication:
     )
 
 @router.get("/", response_model=apiResponse)
-async def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=100), employeeDocumentNumber: Optional[str] = Query(None), IdLoanStatus: Optional[int] = Query(None), requestDateFrom: Optional[date] = Query(None), requestDateTo: Optional[date] = Query(None), service: ILoanApplication = Depends(getLoanApplication),):
+async def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1, le=100), employeeDocumentNumber: Optional[str] = Query(None), IdLoanStatus: Optional[int] = Query(None), IdConcept: Optional[int] = Query(None), requestDateFrom: Optional[date] = Query(None), requestDateTo: Optional[date] = Query(None), service: ILoanApplication = Depends(getLoanApplication),):
     try:
         pagination = PaginationParams(page=page, pageSize=pageSize)
-        data = await service.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
+        data = await service.getAll(pagination=pagination, employeeDocumentNumber=employeeDocumentNumber, IdLoanStatus=IdLoanStatus, IdConcept=IdConcept, requestDateFrom=requestDateFrom, requestDateTo=requestDateTo,)
 
         if not data.items:
             logger.info("No existen préstamos registrados con los filtros enviados.")
@@ -52,6 +53,27 @@ async def getAllLoans(page: int = Query(1, ge=1), pageSize: int = Query(10, ge=1
     except Exception:
         logger.exception("Error inesperado obteniendo préstamos.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al obtener los préstamos.")
+
+@router.get("/export", response_model=apiResponse[list[LoanExportDto]],)
+def getLoansForExport(employeeDocumentNumber: Optional[str] = Query(None), IdLoanStatus: Optional[int] = Query(None), IdConcept: Optional[int] = Query(None), requestDateFrom: Optional[date] = Query(None), requestDateTo: Optional[date] = Query(None), service: ILoanApplication = Depends(getLoanApplication),):
+    try:
+        logger.info("Obteniendo préstamos y emolumentos para exportación.")
+        data = service.getAllForExport(
+            employeeDocumentNumber=employeeDocumentNumber,
+            IdLoanStatus=IdLoanStatus,
+            IdConcept=IdConcept,
+            requestDateFrom=requestDateFrom,
+            requestDateTo=requestDateTo,
+        )
+
+        if not data:
+            return apiResponse(isSuccess=False, Message=("No existen registros para exportar con los filtros seleccionados."), result=[],)
+
+        return apiResponse(isSuccess=True,Message=("Registros obtenidos correctamente para exportación."), result=data,)
+
+    except Exception:
+        logger.exception("Error obteniendo registros para exportación.")
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al obtener los registros para exportación."),)
 
 @router.get("/report", response_model=apiResponse[list[LoanReportDto]])
 def getLoanReport(dateFrom: date = Query(...), dateTo: date = Query(...), service: ILoanApplication = Depends(getLoanApplication)):
