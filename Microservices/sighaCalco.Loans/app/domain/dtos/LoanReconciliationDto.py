@@ -7,17 +7,20 @@ class LoanReconciliationItemDto(BaseModel):
     status: str
     fileDocumentNumber: Optional[str] = None
     fileFullName: Optional[str] = None
+    fileConceptName: Optional[str] = None
     fileAmount: Optional[Decimal] = None
     IdLoan: Optional[int] = None
     isLoan: Optional[bool] = None
     sighaDocumentNumber: Optional[str] = None
     sighaFullName: Optional[str] = None
+    IdConcept: Optional[int] = None
     conceptName: Optional[str] = None
     lastDiscountDate: Optional[date] = None
     sighaAmount: Optional[Decimal] = None
     difference: Optional[Decimal] = None
 
 class LoanReconciliationGroupDto(BaseModel):
+    IdConcept: Optional[int] = None
     conceptName: str
     total: int = 0
     equals: int = 0

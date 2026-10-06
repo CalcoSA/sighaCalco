@@ -5,6 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from datetime import date
+from typing import List
 from math import ceil
 
 class ServiceDiscountHistoryRepository(IServiceDiscountHistoryRepository):
@@ -27,6 +28,13 @@ class ServiceDiscountHistoryRepository(IServiceDiscountHistoryRepository):
 
         except SQLAlchemyError as e:
             raise Exception("Error consultando el histórico de descuentos: " f"{str(e)}")
+
+    def getByLoanIds( self, IdLoans: List[int],) -> List[ServiceDiscountHistory]:
+
+        if not IdLoans:
+            return []
+
+        return (self.db.query(ServiceDiscountHistory).filter(ServiceDiscountHistory.IdLoan.in_(IdLoans)).order_by(ServiceDiscountHistory.IdLoan.asc(), ServiceDiscountHistory.discountDate.asc(),).all())
 
     def exists(self, IdLoan: int, discountDate: date) -> bool:
         try:

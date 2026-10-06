@@ -17,7 +17,7 @@ class LoanRepository(ILoanRepository):
     def _nowColombia(self) -> datetime:
         return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
     
-    def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[Loan]:
+    def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[Loan]:
 
         query = self.db.query(Loan).options(selectinload(Loan.loanInstallments))
 
@@ -27,6 +27,9 @@ class LoanRepository(ILoanRepository):
 
         if IdLoanStatus and IdLoanStatus > 0:
             query = query.filter(Loan.IdLoanStatus == IdLoanStatus)
+
+        if IdConcept and IdConcept > 0:
+            query = query.filter(Loan.IdConcept == IdConcept)
 
         if requestDateFrom:
             query = query.filter(Loan.requestDate >= requestDateFrom)
@@ -39,6 +42,31 @@ class LoanRepository(ILoanRepository):
         totalPages = ceil(total / pagination.pageSize) if pagination.pageSize > 0 else 0
 
         return PaginatedResult(items=items, total=total, page=pagination.page, pageSize=pagination.pageSize, totalPages=totalPages,)
+
+    def getAllForExport(self, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None,) -> List[Loan]:
+        try:
+            query = (self.db.query(Loan).options(selectinload(Loan.loanInstallments)))
+
+            if (employeeDocumentNumber and employeeDocumentNumber.strip()):
+                documentValue = (f"%{employeeDocumentNumber.strip()}%")
+                query = query.filter(Loan.employeeDocumentNumber.like(documentValue))
+
+            if (IdLoanStatus and IdLoanStatus > 0):
+                query = query.filter(Loan.IdLoanStatus == IdLoanStatus)
+
+            if (IdConcept and IdConcept > 0):
+                query = query.filter(Loan.IdConcept == IdConcept)
+
+            if requestDateFrom:
+                query = query.filter(Loan.requestDate>= requestDateFrom)
+
+            if requestDateTo:
+                query = query.filter(Loan.requestDate <= requestDateTo)
+
+            return (query.order_by(Loan.employeeDocumentNumber.asc(), Loan.conceptName.asc(), Loan.IdLoan.asc(),).all())
+
+        except SQLAlchemyError as e:
+            raise Exception("Error obteniendo préstamos y emolumentos para exportar: " f"{str(e)}")
 
     def getById(self, IdLoan: int) -> Optional[Loan]:
         return self.db.query(Loan).options(selectinload(Loan.loanInstallments)).filter(Loan.IdLoan == IdLoan).first()
@@ -105,11 +133,13 @@ class LoanRepository(ILoanRepository):
 
         return loanData
 
-    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
+    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, IdDeductionPlan: int, deductionPlanName: str,  endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
         loanData.loanAmount = loanAmount
         loanData.numberInstallments = numberInstallments
         loanData.paidInstallments = paidInstallments
         loanData.remainingAmount = remainingAmount
+        loanData.IdDeductionPlan = IdDeductionPlan
+        loanData.deductionPlanName = deductionPlanName
         loanData.endDiscountDate = endDiscountDate
         loanData.updatedByUserName = updatedByUserName
         loanData.updatedAt = updatedAt

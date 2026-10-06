@@ -31,6 +31,14 @@ class ReconciliationExcelReader:
         "valor descuento",
     }
 
+    CONCEPT_HEADERS = {
+        "concepto",
+        "nombre concepto",
+        "nombre de concepto",
+        "descripcion concepto",
+        "descripcion de concepto",
+    }
+
     def read(self, content: bytes,) -> list[dict]:
         workbook = load_workbook(BytesIO(content), read_only=True, data_only=True,)
         worksheet = self._findWorksheet(workbook)
@@ -39,15 +47,16 @@ class ReconciliationExcelReader:
             raise ValueError(
                 "No fue posible encontrar una hoja con las columnas Documento, Nombre y Cuota.")
 
-        (headerRow, documentColumn, nameColumn, amountColumn,) = self._findHeaders(worksheet)
+        (headerRow, documentColumn, nameColumn, amountColumn, conceptColumn,) = self._findHeaders(worksheet)
         records: list[dict] = []
 
         for rowNumber in range(headerRow + 1, worksheet.max_row + 1,):
             documentValue = worksheet.cell(rowNumber, documentColumn,).value
             nameValue = worksheet.cell(rowNumber, nameColumn,).value
             amountValue = worksheet.cell(rowNumber, amountColumn,).value
+            conceptValue = worksheet.cell(rowNumber, conceptColumn,).value
 
-            if (documentValue is None and nameValue is None and amountValue is None):
+            if (documentValue is None and nameValue is None and amountValue is None and conceptValue is None):
                 continue
 
             documentNumber = (self._normalizeDocument(documentValue))
@@ -60,12 +69,18 @@ class ReconciliationExcelReader:
             if amount is None:
                 raise ValueError(f"La fila {rowNumber} no tiene una cuota válida.")
 
+            conceptName = str(conceptValue or "").strip()
+
+            if not conceptName:
+                raise ValueError(f"La fila {rowNumber} no tiene un concepto válido.")
+
             records.append(
                 {
                     "rowNumber": rowNumber,
                     "documentNumber": documentNumber,
                     "fullName": str(nameValue or "").strip(),
                     "amount": amount,
+                    "conceptName": conceptName,
                 }
             )
 
@@ -89,6 +104,7 @@ class ReconciliationExcelReader:
             documentColumn = None
             nameColumn = None
             amountColumn = None
+            conceptColumn = None
 
             for columnNumber in range(1, worksheet.max_column + 1,):
                 value = worksheet.cell(rowNumber, columnNumber,).value
@@ -100,9 +116,11 @@ class ReconciliationExcelReader:
                     nameColumn = (columnNumber)
                 elif (header in self.AMOUNT_HEADERS):
                     amountColumn = (columnNumber)
+                elif header in self.CONCEPT_HEADERS:
+                    conceptColumn = columnNumber
 
-            if (documentColumn and nameColumn and amountColumn):
-                return (rowNumber, documentColumn, nameColumn, amountColumn,)
+            if (documentColumn and nameColumn and amountColumn and conceptColumn):
+                return (rowNumber, documentColumn, nameColumn, amountColumn, conceptColumn,)
 
         raise ValueError("No se encontraron los encabezados.")
 

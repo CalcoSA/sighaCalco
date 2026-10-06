@@ -8,7 +8,11 @@ from decimal import Decimal
 class ILoanRepository(ABC):
 
     @abstractmethod
-    def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[Loan]:
+    def getAll(self, pagination: PaginationParams, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None) -> PaginatedResult[Loan]:
+        pass
+
+    @abstractmethod
+    def getAllForExport(self, employeeDocumentNumber: Optional[str] = None, IdLoanStatus: Optional[int] = None, IdConcept: Optional[int] = None, requestDateFrom: Optional[date] = None, requestDateTo: Optional[date] = None,) -> List[Loan]:
         pass
 
     @abstractmethod
@@ -44,7 +48,7 @@ class ILoanRepository(ABC):
         pass
 
     @abstractmethod
-    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
+    def updateLoan(self, loanData: Loan, loanAmount: Decimal, numberInstallments: int, paidInstallments: int, remainingAmount: Decimal, IdDeductionPlan: int, deductionPlanName: str, endDiscountDate: Optional[date], updatedByUserName: str, updatedAt: datetime) -> Loan:
         pass
 
     @abstractmethod
