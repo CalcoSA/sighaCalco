@@ -20,7 +20,8 @@ class ExcelReader:
     COMPANY_RUT_COLUMN = "empresa - rut empresa"
     COMPANY_RUT_VALUE = "800.180.330-9"
     SALARY = "campos personalizados de trabajo - salario (obligatorio)"
-    REST = "campos personalizados de trabajo - dia de descanso 2 (t)"
+    REST = "campos personalizados de trabajo - dia de descanso 1 (t)"
+    
 
     def __init__(self):
         self.fieldMappings = self._buildFieldMappings()
@@ -142,8 +143,8 @@ class ExcelReader:
 
             FieldMapping(
                 targetField="centro_costos_4",
-                sourceColumns=["campos personalizados de trabajo - dia de descanso 2 (t)"],
-                transform=lambda row: self._mapRestDayCode(self._getCellText(row["campos personalizados de trabajo - dia de descanso 2 (t)"])),
+                sourceColumns=["campos personalizados de trabajo - dia de descanso 1 (t)"],
+                transform=lambda row: self._mapRestDayCode(self._getCellText(row["campos personalizados de trabajo - dia de descanso 1 (t)"])),
             ),
             FieldMapping(
                 targetField="tipo_empleado",
@@ -2528,8 +2529,8 @@ class ExcelReader:
             self._normalize("trabajo - nombre sub-area nivel 1"),
             self._normalize("trabajo - nombre sub-area asignada(o)"),
             self._normalize("trabajo - nombre sub-area asignada(o)"),
-            self._normalize("campos personalizados de trabajo - dia de descanso 2 (t)"),
-            self._normalize("campos personalizados de trabajo - dia de descanso 2 (t)"),
+            self._normalize("campos personalizados de trabajo - dia de descanso 1 (t)"),
+            self._normalize("campos personalizados de trabajo - dia de descanso 1 (t)"),
             self._normalize("colaborador - municipio"),
             self._normalize("colaborador - email"),
             self._normalize("colaborador - numero de cuenta"),
@@ -2605,12 +2606,12 @@ class ExcelReader:
                 "fieldName": "DESC CEN3",
             },
             {
-                "sourceColumn": "campos personalizados de trabajo - dia de descanso 2 (t)",
+                "sourceColumn": "campos personalizados de trabajo - dia de descanso 1 (t)",
                 "fieldName": "CEN4",
                 "transform": self._mapRestDayCode,
             },
             {
-                "sourceColumn": "campos personalizados de trabajo - dia de descanso 2 (t)",
+                "sourceColumn": "campos personalizados de trabajo - dia de descanso 1 (t)",
                 "fieldName": "DESC CEN4",
             },
             {
