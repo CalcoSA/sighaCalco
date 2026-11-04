@@ -3,6 +3,7 @@ from app.domain.dtos.LoanReconciliationDto import LoanReconciliationResultDto
 from app.domain.dtos.ServiceDiscountHistoryDto import ServiceValueUpdateDto
 from app.common.pagination import PaginationParams, PaginatedResult
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanImportDto import LoanImportResultDto
 from app.domain.dtos.LoanExportDto import LoanExportDto
 from abc import ABC, abstractmethod
 from typing import Optional, List
@@ -44,4 +45,8 @@ class ILoanApplication(ABC):
 
     @abstractmethod
     def processScheduledLoans(self, actorUserName: str,) -> LoanScheduledDto:
+        pass
+
+    @abstractmethod
+    def importFromExcel(self, fileContent: bytes,) -> LoanImportResultDto:
         pass

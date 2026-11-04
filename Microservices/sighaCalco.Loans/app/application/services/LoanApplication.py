@@ -3,6 +3,9 @@ from app.domain.interfaces.IServiceDiscountHistoryRepository import IServiceDisc
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.domain.interfaces.ILoanStatusHistoryRepository import ILoanStatusHistoryRepository
 from app.infrastructure.excel.ReconciliationExcelReader import ReconciliationExcelReader
+from app.domain.interfaces.IPayrollSinergyRepository import IPayrollSinergyRepository
+from app.domain.interfaces.IDeductionPlanRepository import IDeductionPlanRepository
+from app.infrastructure.excel.LoanImportExcelReader import LoanImportExcelReader
 from app.domain.entities.serviceDiscountHistory import ServiceDiscountHistory
 from app.domain.interfaces.ILoanStatusRepository import ILoanStatusRepository
 from app.infrastructure.external.BukEmployeeClient import BukEmployeeClient
@@ -14,11 +17,12 @@ from app.domain.entities.loanStatusHistory import LoanStatusHistory
 from app.domain.interfaces.ILoanRepository import ILoanRepository
 from app.domain.entities.loanInstallment import LoanInstallment
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanImportDto import LoanImportResultDto
 from app.domain.dtos.LoanExportDto import LoanExportDto
 from app.domain.entities.loanLog import LoanLog
 from sqlalchemy.exc import SQLAlchemyError
 from app.domain.entities.loan import Loan
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Optional, List
 from calendar import monthrange
 from zoneinfo import ZoneInfo
@@ -26,12 +30,14 @@ from decimal import Decimal
 
 class LoanApplication(ILoanApplication):
 
-    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository, loanStatusHistoryRepository: ILoanStatusHistoryRepository, loanStatusRepository: ILoanStatusRepository, serviceDiscountHistoryRepository: IServiceDiscountHistoryRepository):
+    def __init__(self, loanRepository: ILoanRepository, loanLogRepository: ILoanLogRepository, loanStatusHistoryRepository: ILoanStatusHistoryRepository, loanStatusRepository: ILoanStatusRepository, serviceDiscountHistoryRepository: IServiceDiscountHistoryRepository, payrollSinergyRepository: IPayrollSinergyRepository, deductionPlanRepository: IDeductionPlanRepository):
         self.loanRepository = loanRepository
         self.loanLogRepository = loanLogRepository
         self.loanStatusHistoryRepository = loanStatusHistoryRepository
         self.loanStatusRepository = loanStatusRepository
         self.serviceDiscountHistoryRepository = serviceDiscountHistoryRepository
+        self.payrollSinergyRepository = payrollSinergyRepository
+        self.deductionPlanRepository = deductionPlanRepository
 
     def _nowColombia(self) -> datetime:
         return datetime.now(ZoneInfo("America/Bogota")).replace(tzinfo=None)
@@ -1877,6 +1883,8 @@ class LoanApplication(ILoanApplication):
         )
     
     def _calculateCommitmentDates(self, startDate: date, numberInstallments: int, deductionPlanName: str) -> list[date]:
+        deductionPlanName = deductionPlanName.strip().lower()
+
         dates: list[date] = []
 
         if deductionPlanName == "primera quincena":
@@ -1884,17 +1892,16 @@ class LoanApplication(ILoanApplication):
 
             for index in range(numberInstallments):
                 monthIndex = (startDate.month - 1 + firstMonthOffset + index)
-                year = startDate.year + (monthIndex // 12)
+                year = (startDate.year + (monthIndex // 12))
                 month = (monthIndex % 12) + 1
                 dates.append(date(year, month, 15))
 
             return dates
 
         if deductionPlanName == "segunda quincena":
-
             for index in range(numberInstallments):
                 monthIndex = (startDate.month - 1 + index)
-                year = startDate.year + (monthIndex // 12)
+                year = (startDate.year + (monthIndex // 12))
                 month = (monthIndex % 12) + 1
                 lastDay = monthrange(year, month)[1]
                 dates.append(date(year, month, lastDay))
@@ -1904,13 +1911,12 @@ class LoanApplication(ILoanApplication):
         if deductionPlanName == "ambas quincenas":
             currentYear = startDate.year
             currentMonth = startDate.month
-            isFirstFortnight = startDate.day <= 15
+            isFirstFortnight = (startDate.day <= 15)
 
             for _ in range(numberInstallments):
 
                 if isFirstFortnight:
                     dates.append(date(currentYear, currentMonth, 15))
-
                     isFirstFortnight = False
 
                 else:
@@ -1925,7 +1931,7 @@ class LoanApplication(ILoanApplication):
 
             return dates
 
-        raise ValueError("El plan de deducción del préstamo no es válido.")
+        raise ValueError("El plan de deducción no es válido.")
 
     def _appendObservation(self, currentObservation: Optional[str], newObservation: Optional[str], updateDate: datetime,) -> Optional[str]:
         newText = (
@@ -1937,11 +1943,7 @@ class LoanApplication(ILoanApplication):
         if not newText:
             return currentObservation
 
-        datedObservation = (
-            f"{updateDate.strftime('%d/%m/%Y')} - "
-            f"{newText}"
-        )
-
+        datedObservation = (f"{updateDate.strftime('%d/%m/%Y')} - " f"{newText}")
         currentText = (
             currentObservation.strip()
             if currentObservation
@@ -1951,7 +1953,314 @@ class LoanApplication(ILoanApplication):
         if not currentText:
             return datedObservation
 
-        return (
-            f"{currentText}\n"
-            f"{datedObservation}"
+        return (f"{currentText}\n" f"{datedObservation}")
+
+    def _calculateImportedInstallmentValues(self, loanAmount: Decimal, numberInstallments: int, installmentValue: Decimal,) -> list[Decimal]:
+        loanAmount = loanAmount.quantize(Decimal("0.01"))
+        installmentValue = (installmentValue.quantize(Decimal("0.01")))
+
+        if installmentValue <= 0:
+            raise ValueError("El Valor cuota debe ser mayor a cero.")
+
+        if numberInstallments <= 0:
+            raise ValueError("El Número de cuotas debe ser mayor a cero.")
+
+        if numberInstallments == 1:
+
+            if installmentValue != loanAmount:
+                raise ValueError("Si existe una sola cuota, Valor cuota debe ser igual al Valor de préstamo.")
+
+            return [loanAmount]
+
+        previousTotal = (installmentValue * Decimal(numberInstallments - 1)).quantize(Decimal("0.01"))
+        lastInstallmentValue = (loanAmount - previousTotal).quantize(Decimal("0.01"))
+
+        if lastInstallmentValue <= 0:
+            raise ValueError("El Valor cuota es demasiado alto para el préstamo y número de cuotas indicados.")
+
+        if (lastInstallmentValue > installmentValue):
+
+            raise ValueError("El Valor cuota es demasiado bajo para cubrir el préstamo con el número de cuotas indicado.")
+
+        values = [
+            installmentValue
+            for _ in range(numberInstallments - 1)
+        ]
+
+        values.append(lastInstallmentValue)
+
+        return values    
+
+    def importFromExcel(self, fileContent: bytes,) -> LoanImportResultDto:
+        reader = LoanImportExcelReader()
+        records = reader.read(fileContent)
+
+        if not records:
+            raise ValueError("El Excel no contiene registros.")
+
+        activeStatus = (self.loanStatusRepository.getById(1))
+
+        if not activeStatus:
+            raise ValueError("No existe el estado Activo.")
+
+        if (activeStatus.nameLoanStatus.strip().lower() != "activo"):
+            raise ValueError("El IdLoanStatus 1 no corresponde al estado Activo.")
+
+        preparedRecords = []
+        conceptCache = {}
+        planCache = {}
+        importedKeys = set()
+
+        for record in records:
+            rowNumber = (record["rowNumber"])
+            conceptCode = (record["conceptCode"])
+
+            if conceptCode not in conceptCache:
+                conceptCache[conceptCode] = (self.payrollSinergyRepository.getByCode(conceptCode))
+
+            concept = conceptCache[conceptCode]
+
+            if not concept:
+                raise ValueError(f"Fila {rowNumber}: " f"no existe el Concepto Sinergy " f"{conceptCode}.")
+
+            IdDeductionPlan = (record["IdDeductionPlan"])
+
+            if (IdDeductionPlan not in (1, 2, 3)):
+                raise ValueError(f"Fila {rowNumber}: Plan deducción debe ser 1, 2 o 3.")
+
+            if (IdDeductionPlan not in planCache):
+                planCache[IdDeductionPlan] = (self.deductionPlanRepository.getById(IdDeductionPlan))
+
+            deductionPlan = (planCache[IdDeductionPlan])
+
+            if not deductionPlan:
+                raise ValueError(f"Fila {rowNumber}: " f"no existe el plan de " f"deducción " f"{IdDeductionPlan}.")
+
+            importKey = (
+                record["employeeDocumentNumber"],
+                concept.IdPayrollSinergy,
+                record["isLoan"],
+                record["startDiscountDate"],
+                record["crossDocument"] or "",
+            )
+
+            if importKey in importedKeys:
+                raise ValueError(f"Fila {rowNumber}: el registro está duplicado dentro del Excel.")
+
+            importedKeys.add(importKey)
+
+            if (
+                self.loanRepository
+                .existsForImport(
+                    employeeDocumentNumber=(record["employeeDocumentNumber"]),
+                    IdConcept=(concept.IdPayrollSinergy),
+                    isLoan=(record["isLoan"]),
+                    startDiscountDate=(record["startDiscountDate"]),
+                    crossDocument=(record["crossDocument"]),
+                )
+            ):
+
+                raise ValueError(f"Fila {rowNumber}: el préstamo/emolumento ya existe en SIGHA.")
+
+            if record["isLoan"]:
+                loanAmount = (record["loanAmount"])
+                numberInstallments = (record["numberInstallments"])
+                paidInstallments = (record["paidInstallments"])
+                installmentValue = (record["installmentValue"])
+
+                if (loanAmount is None or loanAmount <= Decimal("0")):
+                    raise ValueError(f"Fila {rowNumber}: Valor de préstamo es obligatorio.")
+
+                if (record["serviceValue"] is not None):
+                    raise ValueError(f"Fila {rowNumber}: un préstamo no debe tener Valor de emolumento.")
+
+                if (numberInstallments is None or numberInstallments <= 0):
+                    raise ValueError(f"Fila {rowNumber}: Número de cuotas es obligatorio.")
+
+                if paidInstallments is None:
+                    raise ValueError(f"Fila {rowNumber}: Cuotas pagadas es obligatorio para los préstamos. Use 0 si ninguna está pagada.")
+
+                if paidInstallments < 0:
+                    raise ValueError(f"Fila {rowNumber}: Cuotas pagadas no puede ser negativo.")
+
+                if (paidInstallments > numberInstallments):
+                    raise ValueError(f"Fila {rowNumber}: Cuotas pagadas no puede superar Número de cuotas.")
+
+                if (paidInstallments == numberInstallments):
+                    raise ValueError(f"Fila {rowNumber}: el préstamo ya está completamente pagado y no puede importarse Activo.")
+
+                if (installmentValue is None or installmentValue <= Decimal("0")):
+                    raise ValueError(f"Fila {rowNumber}: Valor cuota es obligatorio.")
+
+                commitmentDates = (
+                    self
+                    ._calculateCommitmentDates(
+                        startDate=(record["startDiscountDate"]),
+                        numberInstallments=(numberInstallments),
+                        deductionPlanName=(deductionPlan.nameDeductionPlan),
+                    )
+                )
+
+                installmentValues = (
+                    self
+                    ._calculateImportedInstallmentValues(
+                        loanAmount=(loanAmount),
+                        numberInstallments=(numberInstallments),
+                        installmentValue=(installmentValue),
+                    )
+                )
+
+                installments = []
+
+                for index in range(numberInstallments):
+                    isPaid = (index < paidInstallments)
+
+                    installments.append(
+                        LoanInstallment(
+                            installmentNumber=(index + 1),
+                            installmentValue=(installmentValues[index]),
+                            isPaid=isPaid,
+                            commitmentDate=(commitmentDates[index]),
+                            paymentDate=None,
+                        )
+                    )
+
+                remainingAmount = sum(
+                    (
+                        installment
+                        .installmentValue
+                        for installment
+                        in installments
+                        if not installment.isPaid
+                    ),
+                    Decimal("0.00"),
+                ).quantize(
+                    Decimal("0.01")
+                )
+
+                endDiscountDate = (commitmentDates[-1])
+                serviceValue = None
+
+            else:
+                serviceValue = (record["serviceValue"])
+
+                if (serviceValue is None or serviceValue <= Decimal("0")):
+                    raise ValueError(f"Fila {rowNumber}: Valor de emolumento es obligatorio.")
+
+                if (record["loanAmount"] is not None):
+                    raise ValueError(f"Fila {rowNumber}: un emolumento no debe tener Valor de préstamo.")
+
+                if (record["numberInstallments"] is not None):
+                    raise ValueError(f"Fila {rowNumber}: un emolumento no debe tener Número de cuotas.")
+
+                if (record["paidInstallments"] is not None):
+                    raise ValueError(f"Fila {rowNumber}: un emolumento no debe tener Cuotas pagadas.")
+
+                if (record["installmentValue"] is not None):
+                    raise ValueError(f"Fila {rowNumber}: un emolumento no debe tener Valor cuota.")
+
+                loanAmount = None
+                numberInstallments = None
+                paidInstallments = None
+                remainingAmount = None
+                endDiscountDate = None
+                installments = []
+
+            preparedRecords.append(
+                {
+                    "source": record,
+                    "IdConcept": concept.IdPayrollSinergy,
+                    "conceptName": concept.namePayrollSinergy.strip(),
+                    "IdDeductionPlan": deductionPlan.IdDeductionPlan,
+                    "deductionPlanName": deductionPlan.nameDeductionPlan.strip(),
+                    "loanAmount": loanAmount,
+                    "serviceValue": serviceValue,
+                    "numberInstallments": numberInstallments,
+                    "paidInstallments": paidInstallments,
+                    "remainingAmount": remainingAmount,
+                    "endDiscountDate": endDiscountDate,
+                    "installments": installments,
+                }
+            )
+
+        result = LoanImportResultDto(
+            totalRows=len(preparedRecords),
+            loansCreated=0,
+            servicesCreated=0,
+            installmentsCreated=0,
         )
+
+        try:
+            for prepared in (preparedRecords):
+                source = prepared["source"]
+                startDate = source["startDiscountDate"]
+                createdAt = datetime.combine(startDate, time.min,)
+                loan = Loan(
+                    employeeDocumentNumber=(source["employeeDocumentNumber"]),
+                    employeeFullName=(source["employeeFullName"]),
+                    employeeRoleName=None,
+                    employeeCostCenterName=None,
+                    isLoan=(source["isLoan"]),
+                    IdConcept=(prepared["IdConcept"]),
+                    conceptName=(prepared["conceptName"]),
+                    IdDeductionPlan=(prepared["IdDeductionPlan"]),
+                    deductionPlanName=(prepared["deductionPlanName"]),
+                    IdLoanStatus=1,
+                    loanStatusName="Activo",
+                    crossDocument=(source["crossDocument"]),
+                    loanAmount=(prepared["loanAmount"]),
+                    serviceValue=(prepared["serviceValue"]),
+                    numberInstallments=(prepared["numberInstallments"]),
+                    paidInstallments=(prepared["paidInstallments"]),
+                    remainingAmount=(prepared["remainingAmount"]),
+                    requestDate=startDate,
+                    startDiscountDate=(startDate),
+                    endDiscountDate=(prepared["endDiscountDate"]),
+                    observation=None,
+                    createdByUserName=("EJECUCION_MANUAL"),
+                    updatedByUserName=None,
+                    createdAt=createdAt,
+                    updatedAt=None,
+                )
+
+                loan.loanInstallments = (prepared["installments"])
+                createdLoan = (self.loanRepository.createImported(loan))
+
+                self.loanStatusHistoryRepository.create(
+                    LoanStatusHistory(
+                        IdLoan=createdLoan.IdLoan,
+                        IdLoanStatus=1,
+                        observation="Registro importado mediante carga inicial por Excel.",
+                        createdAt=createdAt,
+                        createdByUserName="EJECUCION_MANUAL",
+                    )
+                )
+
+                self.loanLogRepository.add(
+                    LoanLog(
+                        actionType=("Importación inicial Excel"),
+                        IdLoan=(createdLoan.IdLoan),
+                        IdLoanInstallment=None,
+                        installmentNumber=None,
+                        employeeDocumentNumber=(createdLoan.employeeDocumentNumber),
+                        conceptName=(createdLoan.conceptName),
+                        loanStatusName="Activo",
+                        installmentStatusName=None,
+                        observation=("Registro importado mediante Excel."),
+                        actorUserName=("EJECUCION_MANUAL"),
+                    )
+                )
+
+                if createdLoan.isLoan:
+                    result.loansCreated += 1
+                    result.installmentsCreated += (len(createdLoan.loanInstallments))
+
+                else:
+                    result.servicesCreated += 1
+
+            self.loanRepository.commit()
+            return result
+
+        except Exception:
+            self.loanRepository.rollback()
+            raise

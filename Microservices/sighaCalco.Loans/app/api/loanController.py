@@ -1,6 +1,8 @@
 from app.infrastructure.repositories.ServiceDiscountHistoryRepository import ServiceDiscountHistoryRepository
 from app.domain.dtos.LoanDto import LoanCreateDto, LoanDto, LoanUpdateDto, LoanReportDto, LoanEditDto
 from app.infrastructure.repositories.LoanStatusHistoryRepository import LoanStatusHistoryRepository
+from app.infrastructure.repositories.PayrollSinergyRepository import PayrollSinergyRepository
+from app.infrastructure.repositories.DeductionPlanRepository import DeductionPlanRepository
 from app.infrastructure.repositories.LoanStatusRepository import LoanStatusRepository
 from app.infrastructure.repositories.LoanLogRepository import LoanLogRepository
 from app.domain.dtos.LoanReconciliationDto import LoanReconciliationResultDto
@@ -11,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.application.services.LoanApplication import LoanApplication
 from app.infrastructure.logging.loggerConfig import getLogger
 from app.domain.dtos.LoanScheduledDto import LoanScheduledDto
+from app.domain.dtos.LoanImportDto import LoanImportResultDto
 from app.domain.dtos.LoanExportDto import LoanExportDto
 from app.common.pagination import PaginationParams
 from app.infrastructure.db.connection import getDb
@@ -29,13 +32,17 @@ def getLoanApplication(db: Session = Depends(getDb)) -> ILoanApplication:
     loanStatusHistoryRepository = LoanStatusHistoryRepository(db)
     loanStatusRepository = LoanStatusRepository(db)
     serviceDiscountHistoryRepository = ServiceDiscountHistoryRepository(db)
+    payrollSinergyRepository = PayrollSinergyRepository(db)
+    deductionPlanRepository = DeductionPlanRepository(db)
 
     return LoanApplication(
         loanRepository=loanRepository,
         loanLogRepository=loanLogRepository,
         loanStatusHistoryRepository=loanStatusHistoryRepository,
         loanStatusRepository=loanStatusRepository,
-        serviceDiscountHistoryRepository=serviceDiscountHistoryRepository
+        serviceDiscountHistoryRepository=serviceDiscountHistoryRepository,
+        payrollSinergyRepository= payrollSinergyRepository,
+        deductionPlanRepository= deductionPlanRepository,
     )
 
 @router.get("/", response_model=apiResponse)
@@ -237,3 +244,34 @@ def updateServiceValue(IdLoan: int, serviceData: ServiceValueUpdateDto, service:
         logger.exception("Error actualizando valor | IdLoan=%s", IdLoan)
 
         raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al actualizar el valor del emolumento."))
+
+@router.post("/import", response_model=apiResponse[LoanImportResultDto],)
+async def importLoansFromExcel(file: UploadFile = File(...), service: ILoanApplication = Depends(getLoanApplication),):
+    try:
+        fileName = (file.filename or "").lower()
+
+        if not fileName.endswith(".xlsx"):
+            raise ValueError("El archivo debe ser Excel con extensión .xlsx.")
+
+        content = await file.read()
+
+        if not content:
+            raise ValueError("El archivo está vacío.")
+
+        maxFileSize = (10 * 1024 * 1024)
+
+        if len(content) > maxFileSize:
+            raise ValueError("El archivo no puede superar los 10 MB.")
+
+        logger.info("Iniciando importación de préstamos y emolumentos | fileName=%s", file.filename,)
+        data = service.importFromExcel(fileContent=content)
+        logger.info("Importación terminada | total=%s | loans=%s | services=%s | installments=%s", data.totalRows, data.loansCreated, data.servicesCreated, data.installmentsCreated,)
+        return apiResponse(isSuccess=True, Message=("Préstamos y emolumentos importados correctamente."), result=data,)
+
+    except ValueError as exception:
+        logger.warning("Validación importando Excel | error=%s", str(exception),)
+        raise HTTPException(status_code=(status.HTTP_400_BAD_REQUEST), detail=str(exception),)
+
+    except Exception:
+        logger.exception("Error inesperado importando préstamos y emolumentos.")
+        raise HTTPException(status_code=(status.HTTP_500_INTERNAL_SERVER_ERROR), detail=("Error al importar préstamos y emolumentos."),)
