@@ -63,3 +63,10 @@ class ILoanRepository(ABC):
     def rollback(self) -> None:
         pass
 
+    @abstractmethod
+    def createImported(self, loanData: Loan,) -> Loan:
+        pass
+
+    @abstractmethod
+    def existsForImport(self, employeeDocumentNumber: str, IdConcept: int, isLoan: bool, startDiscountDate: date, crossDocument: Optional[str] = None,) -> bool:
+        pass

@@ -173,3 +173,32 @@ class LoanRepository(ILoanRepository):
 
     def rollback(self) -> None:
         self.db.rollback()
+
+    def createImported(self, loanData: Loan,) -> Loan:
+        self.db.add(loanData)
+        self.db.flush()
+
+        return loanData
+
+    def existsForImport(self, employeeDocumentNumber: str, IdConcept: int, isLoan: bool, startDiscountDate: date, crossDocument: Optional[str] = None,) -> bool:
+
+        query = (
+            self.db.query(Loan.IdLoan)
+            .filter(
+                Loan.employeeDocumentNumber == employeeDocumentNumber,
+                Loan.IdConcept == IdConcept,
+                Loan.isLoan == isLoan,
+                Loan.startDiscountDate == startDiscountDate,
+            )
+        )
+
+        if crossDocument:
+            query = query.filter(Loan.crossDocument == crossDocument)
+
+        else:
+            query = query.filter(Loan.crossDocument.is_(None))
+
+        return (
+            query.first()
+            is not None
+        )
